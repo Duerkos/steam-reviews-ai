@@ -1,0 +1,6 @@
+scikit-learn
+nltk
+streamlit
+wordcloud
+pandas
+pillow
