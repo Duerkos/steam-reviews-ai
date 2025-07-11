@@ -4,23 +4,14 @@ import time
 import requests
 import pandas as pd
 import numpy as np
-from wordcloud import WordCloud
-import nltk
-try:
-    nltk.data.find('tokenizers/punkt_tab')
-except LookupError:
-    nltk.download('punkt_tab')
-    nltk.download('wordnet')
-
-from nltk.corpus import stopwords
-from nltk.stem.wordnet import WordNetLemmatizer   
+from wordcloud import WordCloud  
 from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 from requests.exceptions import SSLError
-from sklearn.decomposition import NMF
-from sklearn.feature_extraction.text import TfidfVectorizer
+
+#Mistral shenanigans here: https://www.datacamp.com/tutorial/mistral-agents-api
 
 stopwords_list = requests.get("https://gist.githubusercontent.com/rg089/35e00abf8941d72d419224cfd5b5925d/raw/12d899b70156fd0041fa9778d657330b024b959c/stopwords.txt").content
 stopwords = set(stopwords_list.decode().splitlines())
@@ -150,33 +141,6 @@ def get_request(url,parameters=None, steamspy=False):
             print('Retrying.')
             return get_request(url, parameters, steamspy)
         
-def plot_nmf_topics(good_review_list, bad_review_list, n_features, stop_words, n_components, n_top_words, init, img, summary, subtext):
-    """Plot NMF topics."""
-    tfidf_vectorizer = TfidfVectorizer(
-        max_df=0.95, min_df=2, max_features=n_features, stop_words=stop_words
-    )
-    tfidf = tfidf_vectorizer.fit_transform(good_review_list+ bad_review_list)
-    
-    nmf = NMF(
-    n_components=n_components,
-    random_state=1,
-    init=init,
-    beta_loss="frobenius",
-    alpha_W=0.00015,
-    alpha_H=0.00015,
-    l1_ratio=1,
-    ).fit(tfidf)
-    
-    tfidf_feature_names = tfidf_vectorizer.get_feature_names_out()
-    w = nmf.transform(tfidf)
-    pos_sum = np.sum(w[:len(good_review_list)], axis=0)
-    neg_sum = np.sum(w[len(good_review_list):], axis=0)
-    tot_sum = pos_sum + neg_sum
-    pos_sum_percent = pos_sum / (tot_sum+0.01)
-    generate_wordclouds(
-        nmf, tfidf_feature_names, n_top_words, n_components, pos_sum_percent, tot_sum, img, summary, subtext
-    )
-        
 @st.cache_data
 def get_steam_df():
     """Return a list of all steam games.
@@ -188,49 +152,6 @@ def get_steam_df():
     """
     return pd.DataFrame(get_request("https://api.steampowered.com/ISteamApps/GetAppList/v2/?")["applist"]["apps"]).set_index("appid")
 
-@st.cache_data
-def parse_steamreviews_request_balanced(appid):
-    num_per_page = 100
-    max_good_review = 100  # max number of good reviews to return
-    max_bad_review = 100
-    good_review_count = 0
-    bad_review_count = 0
-    good_review_list = []
-    bad_review_list = []
-    url = "https://store.steampowered.com/appreviews/" + str(appid)
-    print(url)
-    parameters = {"json": 1, "cursor": "*", "num_per_page": num_per_page, "language": "english", "purchase_type": "all", "review_type": "positive"}
-    #see cursor
-    #https://partner.steamgames.com/doc/store/getreviews
-    json_data = get_request(url, parameters)
-    summary = json_data['query_summary']
-    wnl = WordNetLemmatizer()
-    while good_review_count < max_good_review or bad_review_count < max_bad_review:
-        # if we have not reached the maximum number of good or bad reviews, and there are still reviews to fetch
-        if summary["num_reviews"] == 0:
-            break
-        # if we have not reached the maximum number of good reviews, and there are still good reviews to fetch
-        if good_review_count < max_good_review:
-            json_data = get_request(url, parameters)
-            for review in json_data["reviews"]:
-                good_review_count += 1
-                lemmatized_string = ' '.join([wnl.lemmatize(words) for words in nltk.word_tokenize(review["review"])])
-                good_review_list.append(lemmatized_string)
-        # if we have not reached the maximum number of bad reviews, and there are still bad reviews to fetch
-        elif bad_review_count < max_bad_review:
-            parameters["review_type"] = "negative"
-            if bad_review_count == 0:
-                # reset the cursor to the beginning for bad reviews
-                parameters["cursor"] = "*"
-            json_data = get_request(url, parameters)
-            for review in json_data["reviews"]:
-                bad_review_count += 1
-                bad_review_list.append(review["review"])
-        # get next page of reviews
-        parameters["cursor"] = json_data["cursor"]
-        #st.write(json_data)
-    return good_review_list, bad_review_list, summary
-
 def get_summary(appid):
     """Return summary of reviews for a given appid."""
     url = "https://store.steampowered.com/appreviews/" + str(appid)
@@ -239,32 +160,30 @@ def get_summary(appid):
     return json_data['query_summary']
 
 @st.cache_data
-def parse_steamreviews_request_raw(appid):
-    num_per_page = 100
-    max_review = 300  # max number of good reviews to return
+def parse_steamreviews_request(appid):
+    num_per_page = 50
+    max_review = 50  # max number of reviews to return
     review_count = 0
     good_review_list = []
     bad_review_list = []
     url = "https://store.steampowered.com/appreviews/" + str(appid)
     print(url)
-    parameters = {"json": 1, "cursor": "*", "num_per_page": num_per_page, "language": "english", "purchase_type": "all", "review_type": "all"}
+    parameters = {"json": 1, "cursor": "*", "num_per_page": num_per_page, "language": "english", "purchase_type": "all", "review_type": "all", "day_range": "365"}
     #see cursor
     #https://partner.steamgames.com/doc/store/getreviews
     json_data = get_request(url, parameters)
     summary = json_data['query_summary']
-    wnl = WordNetLemmatizer()
     while review_count < max_review:
         # if we have not reached the maximum number of good or bad reviews, and there are still reviews to fetch
         if summary["num_reviews"] == 0:
             break
         json_data = get_request(url, parameters)
         for review in json_data["reviews"]:
-            lemmatized_string = ' '.join([wnl.lemmatize(words) for words in nltk.word_tokenize(review["review"])])
             review_count += 1
             if review["voted_up"]:
-                good_review_list.append(lemmatized_string)
+                good_review_list.append(review["review"])
             else:
-                bad_review_list.append(lemmatized_string)
+                bad_review_list.append(review["review"])
         # get next page of reviews
         parameters["cursor"] = json_data["cursor"]
         summary = json_data['query_summary']
@@ -308,29 +227,9 @@ if search_request:
             extra_stop_words = extra_stop_words.union(set(appname.lower().split()))
             stop_words = stopwords.union(extra_stop_words)
             
-            good_review_list, bad_review_list, summary_not_needed = parse_steamreviews_request_raw(appid)
-            n_samples = 1000
-            n_features = 400
-            n_components = 30
-            n_top_words = 4
-            batch_size = 128
-            init = "nndsvda"
+            good_review_list, bad_review_list, summary_not_needed = parse_steamreviews_request(appid)
             
             st.write("Summary of reviews:")
-            plot_nmf_topics(good_review_list, bad_review_list, n_features, list(stop_words),
-                            n_components, n_top_words, init, img, summary, "Popular Opinions")
             
             st.write(good_review_list)
             st.write(bad_review_list)
-
-            good_review_list, bad_review_list, summary_not_needed = parse_steamreviews_request_balanced(appid)
-            n_samples = 1000
-            n_features = 400
-            n_components = 30
-            n_top_words = 4
-            batch_size = 128
-            init = "nndsvda"
-            
-            st.write("Comparison of good vs bad reviews:")
-            plot_nmf_topics(good_review_list, bad_review_list, n_features, list(stop_words),
-                            n_components, n_top_words, init, img, summary, "The Good & the Bad")
