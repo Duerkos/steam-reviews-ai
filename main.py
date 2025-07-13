@@ -5,6 +5,7 @@ import time
 import requests
 import pandas as pd
 import numpy as np
+import textwrap
 from wordcloud import WordCloud  
 from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont
@@ -12,11 +13,27 @@ from mistralai import Mistral, UserMessage, SystemMessage
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 from requests.exceptions import SSLError
+from pictex import Canvas
 
 #Mistral shenanigans here: https://www.datacamp.com/tutorial/mistral-agents-api
 
 stopwords_list = requests.get("https://gist.githubusercontent.com/rg089/35e00abf8941d72d419224cfd5b5925d/raw/12d899b70156fd0041fa9778d657330b024b959c/stopwords.txt").content
 stopwords = set(stopwords_list.decode().splitlines())
+
+def text_to_image(text, alignment="left"):
+    canvas = (
+    Canvas()
+    .font_family("Roboto-Regular.ttf")
+    .font_size(24)
+    .color("white")
+    .background_color("black")
+    .padding(20)
+    .alignment(alignment)
+    .line_height(1.1)
+    )
+    img = canvas.render(text).to_numpy()
+
+    return img
 
 def add_summary_text_image(header, summary, subtext, description, positive, negative):
     img = header.copy()  # Safer to work on a copy
@@ -153,6 +170,13 @@ def get_steam_df():
         list of all steam games
     """
     return pd.DataFrame(get_request("https://api.steampowered.com/ISteamApps/GetAppList/v2/?")["applist"]["apps"]).set_index("appid")
+def wrap_list_of_strings(strings, width=40):
+    """Wrap a list of strings to a specified width."""
+    wrapped_strings = []
+    for string in strings:
+        wrapped_string = textwrap.fill(string, width=width)
+        wrapped_strings.append(wrapped_string)
+    return "\n\n".join(wrapped_strings)
 
 def get_summary(appid):
     """Return summary of reviews for a given appid."""
@@ -216,8 +240,9 @@ def get_summary_reviews(reviews):
         response = client.agents.complete(
             agent_id=st.secrets["review_agent"],
             messages=reviews,
-            stream=False
-        )
+            stream=False,
+            response_format={"type": "json_object"}
+            )
         return response    
     except Exception as e:
         st.write(f"Error during web search: {str(e)}")
@@ -268,6 +293,9 @@ if search_request:
             }
             
             raw_response = get_summary_reviews([{"content": json.dumps(categorized_reviews), "role": "user"}])
-            st.write(raw_response.choices[0].message.content)
-            
-            add_summary_text_image(img, summary_not_needed, raw_response.choices[0].message.content, raw_response.choices[0].message.content, summary_not_needed["total_positive"], summary_not_needed["total_negative"])
+            content = raw_response.choices[0].message.content
+            content = json.loads(content)
+            st.json(content)
+            st.image(text_to_image(textwrap.fill(content["summary"], width=80)))
+            st.image(text_to_image(wrap_list_of_strings(content["positive_factors"]), alignment="center"))
+            st.image(text_to_image(wrap_list_of_strings(content["negative_factors"]), alignment="center"))
