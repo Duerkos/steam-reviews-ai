@@ -1,5 +1,6 @@
 #main file
 import streamlit as st
+import json
 import time
 import requests
 import pandas as pd
@@ -7,6 +8,7 @@ import numpy as np
 from wordcloud import WordCloud  
 from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont
+from mistralai import Mistral, UserMessage, SystemMessage
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 from requests.exceptions import SSLError
@@ -16,7 +18,7 @@ from requests.exceptions import SSLError
 stopwords_list = requests.get("https://gist.githubusercontent.com/rg089/35e00abf8941d72d419224cfd5b5925d/raw/12d899b70156fd0041fa9778d657330b024b959c/stopwords.txt").content
 stopwords = set(stopwords_list.decode().splitlines())
 
-def add_summary_text_image(header, summary,subtext):
+def add_summary_text_image(header, summary, subtext, description, positive, negative):
 
     img = header
 
@@ -49,6 +51,12 @@ def add_summary_text_image(header, summary,subtext):
 
     # Draw text on top of the black background
     draw.multiline_text((x, y), text, font=font, fill="white")
+
+    draw.multiline_text()
+
+    vertical_stack = np.vstack([header]+vertical_groups)  # Combine groups vertically
+
+    st.image(vertical_stack, use_container_width=True)
 
 
 # Save or show the image
@@ -189,6 +197,37 @@ def parse_steamreviews_request(appid):
         summary = json_data['query_summary']
         #st.write(json_data)
     return good_review_list, bad_review_list, summary
+# Mistral model 
+mistral_model = "mistral-small-latest"
+client = Mistral(st.secrets["MISTRAL_API_KEY"])
+# Agent IDs
+review_summary_id = "review_summary_agent"
+# Initialize everything
+def initialize():
+    check_client()
+# Check if the client is initialized
+def is_client_initialized():
+    return client is not None and st.secrets["MISTRAL_API_KEY"] is not None
+def check_client():
+    if not is_client_initialized():
+        st.write("Mistral client is not initialized. Please check your API key.")
+        return False
+    st.write("Mistral client is initialized.")
+    return True
+
+initialize()
+
+def get_summary_reviews(reviews):
+    try:
+        response = client.agents.complete(
+            agent_id=st.secrets["review_agent"],
+            messages=reviews,
+            stream=False
+        )
+        return response    
+    except Exception as e:
+        st.write(f"Error during web search: {str(e)}")
+        return 0
 
 search_input = st.text_input("Search Steam Game", key="search_input")
 if search_input == "":
@@ -229,7 +268,16 @@ if search_request:
             
             good_review_list, bad_review_list, summary_not_needed = parse_steamreviews_request(appid)
             
+            categorized_reviews = {
+                "positive_reviews": good_review_list,
+                "negative_reviews": bad_review_list
+            }
+
             st.write("Summary of reviews:")
+
+
             
-            st.write(good_review_list)
-            st.write(bad_review_list)
+            st.json(json.dumps(categorized_reviews))
+            st.json(json.dumps(good_review_list))
+            raw_response = get_summary_reviews([{"content": json.dumps(categorized_reviews), "role": "user"}])
+            st.write(raw_response.choices[0].message.content)
