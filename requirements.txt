@@ -4,3 +4,4 @@ streamlit
 wordcloud
 pandas
 pillow
+mistralai

@@ -1,5 +1,6 @@
 .streamlit
 mistral_env
+mistral-env
 uv.lock
 inspect.json
 .python-version

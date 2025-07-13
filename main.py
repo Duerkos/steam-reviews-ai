@@ -19,44 +19,38 @@ stopwords_list = requests.get("https://gist.githubusercontent.com/rg089/35e00abf
 stopwords = set(stopwords_list.decode().splitlines())
 
 def add_summary_text_image(header, summary, subtext, description, positive, negative):
+    img = header.copy()  # Safer to work on a copy
 
-    img = header
-
-    # Get image dimensions
     width, height = img.size
-
-    # Create a drawing object
     draw = ImageDraw.Draw(img)
 
-    # Load a font (adjust the path and size as needed)
-
+    # Load font from URL
     req = requests.get("https://github.com/googlefonts/roboto/blob/main/src/hinted/Roboto-Regular.ttf?raw=true")
-
     font = ImageFont.truetype(BytesIO(req.content), 32)
 
-    # Define text and position
-    text1 = f"Positive: {summary['total_positive']/ summary['total_reviews']:.2%}"
+    # Text content
+    text1 = f"Positive: {summary['total_positive'] / summary['total_reviews']:.2%}"
     text2 = subtext
-
-    # Calculate position (bottom-left)
-    x = 10  # Small margin from the left
-    y = height - 100  # Adjust based on font size
-
-    # Get bounding box for multiline text
     text = f"{text1}\n{text2}"
+
+    x = 10
+    y = height - 100
+
     bbox = draw.multiline_textbbox((x, y), text, font=font)
-
-    # Draw black rectangle behind text
     draw.rectangle((bbox[0] - 5, bbox[1] - 5, bbox[2] + 5, bbox[3] + 5), fill="black")
-
-    # Draw text on top of the black background
     draw.multiline_text((x, y), text, font=font, fill="white")
 
-    draw.multiline_text()
+    # Add space below and paste the modified image
+    extra_height = 400
+    new_image = Image.new("RGB", (width, height + extra_height), (255, 255, 255))
+    new_image.paste(img, (0, 0))
 
-    vertical_stack = np.vstack([header]+vertical_groups)  # Combine groups vertically
+    # Add description below the image
+    new_draw = ImageDraw.Draw(new_image)
+    new_draw.multiline_text((10, height + 10), description, font=font, fill="black")
 
-    st.image(vertical_stack, use_container_width=True)
+    st.image(new_image, use_container_width=True)
+
 
 
 # Save or show the image
@@ -272,12 +266,8 @@ if search_request:
                 "positive_reviews": good_review_list,
                 "negative_reviews": bad_review_list
             }
-
-            st.write("Summary of reviews:")
-
-
             
-            st.json(json.dumps(categorized_reviews))
-            st.json(json.dumps(good_review_list))
             raw_response = get_summary_reviews([{"content": json.dumps(categorized_reviews), "role": "user"}])
             st.write(raw_response.choices[0].message.content)
+            
+            add_summary_text_image(img, summary_not_needed, raw_response.choices[0].message.content, raw_response.choices[0].message.content, summary_not_needed["total_positive"], summary_not_needed["total_negative"])
