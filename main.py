@@ -20,7 +20,7 @@ from pictex import Canvas
 stopwords_list = requests.get("https://gist.githubusercontent.com/rg089/35e00abf8941d72d419224cfd5b5925d/raw/12d899b70156fd0041fa9778d657330b024b959c/stopwords.txt").content
 stopwords = set(stopwords_list.decode().splitlines())
 
-def text_to_image(text, alignment="left"):
+def text_to_image(text, alignment="left", line_height=1.1):
     canvas = (
     Canvas()
     .font_family("Roboto-Regular.ttf")
@@ -29,17 +29,16 @@ def text_to_image(text, alignment="left"):
     .background_color("black")
     .padding(20)
     .alignment(alignment)
-    .line_height(1.1)
+    .line_height(line_height)
     )
     img = canvas.render(text).to_numpy()
 
     return img
 
-def add_summary_text_image(header, summary, subtext, description, positive, negative):
+def add_summary_text_image(header, summary, subtext):
     img = header.copy()  # Safer to work on a copy
 
     width, height = img.size
-    draw = ImageDraw.Draw(img)
 
     # Load font from URL
     req = requests.get("https://github.com/googlefonts/roboto/blob/main/src/hinted/Roboto-Regular.ttf?raw=true")
@@ -49,24 +48,22 @@ def add_summary_text_image(header, summary, subtext, description, positive, nega
     text1 = f"Positive: {summary['total_positive'] / summary['total_reviews']:.2%}"
     text2 = subtext
     text = f"{text1}\n{text2}"
+    
+    canvas = (
+        Canvas()
+        .font_family("Roboto-Regular.ttf")
+        .font_size(24)
+        .color("white")
+        .background_color("black")
+        .padding(20)
+        )
+    img_text = canvas.render(text).to_pillow()
+    img.resize((width, img_text.height), Image.Resampling.LANCZOS)
+    img_text.height
+    
+    h_stack = np.hstack([img]+[img_text])
 
-    x = 10
-    y = height - 100
-
-    bbox = draw.multiline_textbbox((x, y), text, font=font)
-    draw.rectangle((bbox[0] - 5, bbox[1] - 5, bbox[2] + 5, bbox[3] + 5), fill="black")
-    draw.multiline_text((x, y), text, font=font, fill="white")
-
-    # Add space below and paste the modified image
-    extra_height = 400
-    new_image = Image.new("RGB", (width, height + extra_height), (255, 255, 255))
-    new_image.paste(img, (0, 0))
-
-    # Add description below the image
-    new_draw = ImageDraw.Draw(new_image)
-    new_draw.multiline_text((10, height + 10), description, font=font, fill="black")
-
-    st.image(new_image, use_container_width=True)
+    st.image(h_stack, use_container_width=True)
 
 
 
@@ -170,13 +167,15 @@ def get_steam_df():
         list of all steam games
     """
     return pd.DataFrame(get_request("https://api.steampowered.com/ISteamApps/GetAppList/v2/?")["applist"]["apps"]).set_index("appid")
-def wrap_list_of_strings(strings, width=40):
+def wrap_list_of_strings(strings, width=40, emoji=None):
     """Wrap a list of strings to a specified width."""
     wrapped_strings = []
     for string in strings:
         wrapped_string = textwrap.fill(string, width=width)
+        if emoji:
+            wrapped_string = f"{emoji} {wrapped_string}"
         wrapped_strings.append(wrapped_string)
-    return "\n\n".join(wrapped_strings)
+    return "\n".join(wrapped_strings)
 
 def get_summary(appid):
     """Return summary of reviews for a given appid."""
@@ -292,10 +291,14 @@ if search_request:
                 "negative_reviews": bad_review_list
             }
             
-            raw_response = get_summary_reviews([{"content": json.dumps(categorized_reviews), "role": "user"}])
-            content = raw_response.choices[0].message.content
-            content = json.loads(content)
-            st.json(content)
-            st.image(text_to_image(textwrap.fill(content["summary"], width=80)))
-            st.image(text_to_image(wrap_list_of_strings(content["positive_factors"]), alignment="center"))
-            st.image(text_to_image(wrap_list_of_strings(content["negative_factors"]), alignment="center"))
+            #raw_response = get_summary_reviews([{"content": json.dumps(categorized_reviews), "role": "user"}])
+            #content = raw_response.choices[0].message.content
+            
+            with open('jsonexample.json') as json_file:
+                content = json.load(json_file)
+            #st.json(content)
+            add_summary_text_image(img, summary, "something"),
+            st.image(text_to_image(textwrap.fill(content["summary"], width=80) + "\n\n" +
+                                   wrap_list_of_strings(content["positive_factors"], emoji="✅", width=80) +"\n" +
+                                   wrap_list_of_strings(content["negative_factors"], emoji="❌", width=80),
+                                   alignment="left", line_height=1.5))
