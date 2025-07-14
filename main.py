@@ -6,12 +6,9 @@ import requests
 import pandas as pd
 import numpy as np
 import textwrap
-from wordcloud import WordCloud  
 from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont
 from mistralai import Mistral, UserMessage, SystemMessage
-import matplotlib.pyplot as plt
-import matplotlib.colors as mcolors
 from requests.exceptions import SSLError
 from pictex import Canvas
 
@@ -58,64 +55,20 @@ def add_summary_text_image(header, summary, subtext):
         .padding(20)
         )
     img_text = canvas.render(text).to_pillow()
-    img.resize((width, img_text.height), Image.Resampling.LANCZOS)
-    img_text.height
-    
-    h_stack = np.hstack([img]+[img_text])
+    img = img.resize((width, img_text.height), Image.Resampling.LANCZOS)
+    total_width = img.width + img_text.width
+    new_img = Image.new("RGB", (total_width, img_text.height), color=(255, 255, 255))
 
-    st.image(h_stack, use_container_width=True)
+    new_img.paste(img, (0, 0))
+    new_img.paste(img_text, (img.width, 0))
+
+    st.image(new_img, use_container_width=True)
+
 
 
 
 # Save or show the image
     return np.array(img)
-
-def generate_wordclouds(model, feature_names, n_top_words, n_components, pos_sum_percent, tot_sum, header, summary, subtext):
-    sorted_indices = np.argsort(tot_sum)[::-1]  # Sort topics by descending tot_sum
-    wordcloud_images = []
-
-    # Create a color mapping from red (0) to white (0.5) to green (1)
-    cmap = plt.get_cmap("RdYlGn")
-    norm = mcolors.Normalize(vmin=0, vmax=1)  # Normalize pos_sum_percent to [0, 1]
-
-    for topic_idx in sorted_indices[:n_components]:  # Limit to n_components
-        topic = model.components_[topic_idx]
-        top_features_ind = topic.argsort()[-n_top_words:]
-        top_features = feature_names[top_features_ind]
-        weights = topic[top_features_ind]
-
-        # Create word frequency dictionary
-        word_freq = {word: weight+0.01 for word, weight in zip(top_features, weights)}
-
-        # Determine the RGB colors for words based on pos_sum_percent
-        topic_color = cmap(norm(pos_sum_percent[topic_idx]))  # Get color from colormap
-        rgb_color = f"rgb({int(topic_color[0]*255)}, {int(topic_color[1]*255)}, {int(topic_color[2]*255)})"
-
-        # Generate word cloud using a single color
-        wc = WordCloud(width=200, height=200, background_color="black", 
-                       prefer_horizontal=1.0,
-                       color_func=lambda *args, **kwargs: rgb_color,
-                       normalize_plurals=True).generate_from_text(" ".join(top_features))
-
-
-        # Convert to image
-        img = wc.to_array()
-        wordcloud_images.append(img)
-    
-    base_width = 1000
-    wpercent = (base_width / float(header.size[0]))
-    hsize = int((float(header.size[1]) * float(wpercent)))
-    header = header.resize((base_width, hsize), Image.Resampling.LANCZOS)
-    header = add_summary_text_image(header, summary, subtext)
-    
-    vertical_groups = []
-    for i in range(0, len(wordcloud_images), 5):
-        group = np.hstack(wordcloud_images[i:i+5])
-        vertical_groups.append(group)
-
-    vertical_stack = np.vstack([header]+vertical_groups)  # Combine groups vertically
-
-    st.image(vertical_stack, use_container_width=True)
 
 def get_request(url,parameters=None, steamspy=False):
     """Return json-formatted response of a get request using optional parameters.
