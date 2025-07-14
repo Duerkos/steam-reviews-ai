@@ -28,47 +28,60 @@ def text_to_image(text, alignment="left", line_height=1.1):
     .alignment(alignment)
     .line_height(line_height)
     )
-    img = canvas.render(text).to_numpy()
+    img = canvas.render(text).to_pillow()
 
     return img
 
-def add_summary_text_image(header, summary, subtext):
+def add_summary_text_image(header, summary, score=None):
     img = header.copy()  # Safer to work on a copy
-
     width, height = img.size
-
-    # Load font from URL
-    req = requests.get("https://github.com/googlefonts/roboto/blob/main/src/hinted/Roboto-Regular.ttf?raw=true")
-    font = ImageFont.truetype(BytesIO(req.content), 32)
-
     # Text content
-    text1 = f"Positive: {summary['total_positive'] / summary['total_reviews']:.2%}"
-    text2 = subtext
-    text = f"{text1}\n{text2}"
-    
+    text =  f"App ID: {summary['appid']}\n" + \
+            f"Total Reviews: {summary['total_reviews']}\n" + \
+            f"Positive Reviews: {summary['total_positive']}\n" + \
+            f"Negative Reviews: {summary['total_negative']}\n" + \
+            f"Positive Percentage: {summary['total_positive']/ summary['total_reviews']:.2%}\n" + \
+            f"Review Score Desc: {summary['review_score_desc']}\n"
+    if score:
+        text += f"AI Score: {str(score)}\n"
+
     canvas = (
         Canvas()
         .font_family("Roboto-Regular.ttf")
-        .font_size(24)
+        .font_size(40)
         .color("white")
         .background_color("black")
         .padding(20)
+        .line_height(1.5)
         )
     img_text = canvas.render(text).to_pillow()
-    img = img.resize((width, img_text.height), Image.Resampling.LANCZOS)
+    img = img.resize((int(width*img_text.height/height), img_text.height), Image.Resampling.LANCZOS)
     total_width = img.width + img_text.width
     new_img = Image.new("RGB", (total_width, img_text.height), color=(255, 255, 255))
 
     new_img.paste(img, (0, 0))
     new_img.paste(img_text, (img.width, 0))
 
-    st.image(new_img, use_container_width=True)
+    return new_img
 
+from PIL import Image
 
+def stack_images_vertically(img_1, img_2):
+    # Resize img_1 to match img_2 width
+    new_width = img_2.width
+    aspect_ratio = img_1.height / img_1.width
+    new_height = int(new_width * aspect_ratio)
+    img_1_resized = img_1.resize((new_width, new_height), Image.Resampling.LANCZOS)
 
+    # Create new image with enough height to hold both
+    total_height = img_1_resized.height + img_2.height
+    stacked_img = Image.new("RGB", (new_width, total_height), color=(255, 255, 255))
 
-# Save or show the image
-    return np.array(img)
+    # Paste images
+    stacked_img.paste(img_1_resized, (0, 0))
+    stacked_img.paste(img_2, (0, img_1_resized.height))
+
+    return stacked_img
 
 def get_request(url,parameters=None, steamspy=False):
     """Return json-formatted response of a get request using optional parameters.
@@ -187,6 +200,16 @@ def check_client():
 
 initialize()
 
+def trim_factors(content, steam_score):
+    """Trim the factors based on the steam review score, with a score of 8 two negative factors and 8 positive factors."""
+    steam_score = int(steam_score)
+    if len(content["positive_factors"]) > steam_score:
+        content["positive_factors"] = content["positive_factors"][:steam_score+1]
+    if len(content["negative_factors"]) > (10-steam_score):
+        content["negative_factors"] = content["negative_factors"][:(10-steam_score+1)]
+    st.write(content)
+    return content
+
 def get_summary_reviews(reviews):
     try:
         response = client.agents.complete(
@@ -212,20 +235,10 @@ if search_request:
     col_image, col_stats = st.columns(2)
     response = requests.get(f"https://cdn.akamai.steamstatic.com/steam/apps/{df[df['name']==appname].index[0]}/header.jpg")
     img = Image.open(BytesIO(response.content))
-    with col_image:
-        st.image(f"https://cdn.akamai.steamstatic.com/steam/apps/{df[df['name']==appname].index[0]}/header.jpg", use_container_width=True)
-    with col_stats:
-        col_total, col_summary = st.columns(2)
-        appid = df[df["name"]==appname].index[0]
-        summary = get_summary(appid)
-        with col_total:
-            st.write(f"**App ID:** {appid}")
-            st.write(f"**Total Reviews:** {summary['total_reviews']}")
-            st.write(f"**Positive Reviews:** {summary['total_positive']}")
-            st.write(f"**Negative Reviews:** {summary['total_negative']}")
-        with col_summary:
-            st.write(f"**Positive Percentage:** {summary['total_positive']/ summary['total_reviews']:.2%}")
-            st.write(f"**Review Score Desc:** {summary['review_score_desc']}")
+    appid = df[df["name"]==appname].index[0]
+    summary = get_summary(appid)
+    summary["appid"] = df[df["name"]==appname].index[0]
+    col_banner = st.container()
     col_analysis, col_link = st.columns(2)
     with col_link:
         st.link_button("Store Link", f"https://store.steampowered.com/app/{df[df['name']==appname].index[0]}")
@@ -244,14 +257,18 @@ if search_request:
                 "negative_reviews": bad_review_list
             }
             
-            #raw_response = get_summary_reviews([{"content": json.dumps(categorized_reviews), "role": "user"}])
-            #content = raw_response.choices[0].message.content
-            
-            with open('jsonexample.json') as json_file:
-                content = json.load(json_file)
-            #st.json(content)
+            raw_response = get_summary_reviews([{"content": json.dumps(categorized_reviews), "role": "user"}])
+            content_raw = json.loads(raw_response.choices[0].message.content)
+            content = json.loads(json.dumps(content_raw))
+            content = trim_factors(content, summary['total_positive']/ summary['total_reviews'] * 10)
             add_summary_text_image(img, summary, "something"),
-            st.image(text_to_image(textwrap.fill(content["summary"], width=80) + "\n\n" +
+            with col_banner:
+                st.image(stack_images_vertically(add_summary_text_image(img, summary, content["score"]),
+                                   text_to_image(textwrap.fill(content["summary"], width=80) + "\n\n" +
                                    wrap_list_of_strings(content["positive_factors"], emoji="✅", width=80) +"\n" +
                                    wrap_list_of_strings(content["negative_factors"], emoji="❌", width=80),
-                                   alignment="left", line_height=1.5))
+                                   alignment="left", line_height=1.5)))
+            st.json(content)
+        else: 
+            with col_banner:
+                st.image(add_summary_text_image(img, summary))
