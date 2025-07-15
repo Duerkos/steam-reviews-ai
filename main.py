@@ -11,11 +11,61 @@ from PIL import Image, ImageDraw, ImageFont
 from mistralai import Mistral, UserMessage, SystemMessage
 from requests.exceptions import SSLError
 from pictex import Canvas
+import pymysql
+from datetime import timedelta
 
-#Mistral shenanigans here: https://www.datacamp.com/tutorial/mistral-agents-api
+from sqlalchemy import Column, Integer, String, DateTime
+from sqlalchemy.orm import declarative_base
+from sqlalchemy.sql import func
 
-stopwords_list = requests.get("https://gist.githubusercontent.com/rg089/35e00abf8941d72d419224cfd5b5925d/raw/12d899b70156fd0041fa9778d657330b024b959c/stopwords.txt").content
-stopwords = set(stopwords_list.decode().splitlines())
+Base = declarative_base()
+
+class Summary(Base):
+    __tablename__ = "summaries"
+    appid = Column(String, primary_key=True)
+    summary_date = Column(DateTime)
+    total_reviews = Column(Integer)
+    json_object = Column(String)
+    times_consulted = Column(Integer)
+
+
+conn = st.connection("neon", type="sql")
+
+session = conn.session
+
+new_summary = Summary(appid="-1", summary_date=func.now(), total_reviews=2, json_object="miau", times_consulted=1)
+
+session.add(new_summary)
+session.commit()
+
+def get_summary_by_appid(session, target_appid: str):
+    result = session.query(Summary).filter(Summary.appid == target_appid).first()
+    return result
+
+
+def check_fresh_summary(result):
+    return result.summary_date >= func.now()-timedelta(days=30)
+
+def manage_summary_by_appid(session, target_appid: str):
+    result = get_summary_by_appid(session, target_appid: str)
+    if result is not None:
+        if check_fresh_summary(result):
+            return result.json_object
+        else:
+
+    else:
+
+
+
+# Perform query.
+df = conn.query('SELECT * FROM summaries;', ttl="10m")
+
+session.close()
+
+# Print results.
+st.write(df)
+
+conn.session
 
 def text_to_image(text, alignment="left", line_height=1.1):
     canvas = (
@@ -210,7 +260,7 @@ def trim_factors(content, steam_score):
     st.write(content)
     return content
 
-def get_summary_reviews(reviews):
+def get_json_response(reviews):
     try:
         response = client.agents.complete(
             agent_id=st.secrets["review_agent"],
@@ -222,6 +272,20 @@ def get_summary_reviews(reviews):
     except Exception as e:
         st.write(f"Error during web search: {str(e)}")
         return 0
+
+def get_summary_reviews_ai(appid):
+    good_review_list, bad_review_list, summary_not_needed = parse_steamreviews_request(appid)
+    
+    categorized_reviews = {
+        "positive_reviews": good_review_list,
+        "negative_reviews": bad_review_list
+    }
+    
+    raw_response = get_json_response([{"content": json.dumps(categorized_reviews), "role": "user"}])
+    
+    content_raw = json.loads(raw_response.choices[0].message.content)
+
+    return content_raw
 
 search_input = st.text_input("Search Steam Game", key="search_input")
 if search_input == "":
@@ -245,20 +309,7 @@ if search_request:
     with col_analysis:
         if st.button("Generate Review Analysis"):
             appid = df[df["name"]==appname].index[0]
-            
-            extra_stop_words = {"lot","10","h1","n't", "game", "games", "play", "steam", "valve", "played", "playing"}
-            extra_stop_words = extra_stop_words.union(set(appname.lower().split()))
-            stop_words = stopwords.union(extra_stop_words)
-            
-            good_review_list, bad_review_list, summary_not_needed = parse_steamreviews_request(appid)
-            
-            categorized_reviews = {
-                "positive_reviews": good_review_list,
-                "negative_reviews": bad_review_list
-            }
-            
-            raw_response = get_summary_reviews([{"content": json.dumps(categorized_reviews), "role": "user"}])
-            content_raw = json.loads(raw_response.choices[0].message.content)
+            content_raw = get_summary_reviews_ai(appid)
             content = json.loads(json.dumps(content_raw))
             content = trim_factors(content, summary['total_positive']/ summary['total_reviews'] * 10)
             add_summary_text_image(img, summary, "something"),

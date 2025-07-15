@@ -1,6 +1,8 @@
-numpy
 streamlit
 pandas
 pillow
 mistralai
 pictex
+cloud-sql-python-connector[pymysql]
+sqlalchemy
+psycopg2
