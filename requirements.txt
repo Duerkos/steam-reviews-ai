@@ -5,4 +5,3 @@ mistralai
 pictex
 sqlalchemy
 psycopg2
-skia-python==87.8
