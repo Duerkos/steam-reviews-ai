@@ -34,6 +34,7 @@ def check_fresh_summary(result, total_reviews):
 def manage_summary_by_appid(target_appid: str, total_reviews: int):
     conn = st.connection("neon", type="sql")
     session = conn.session
+    #result = conn.query('"SELECT * FROM summaries WHERE appid = :appid", {"appid": target_appid}')
     result = session.get(Summary, target_appid)
     json_summary = None
     if result is not None:
