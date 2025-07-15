@@ -61,7 +61,7 @@ def manage_summary_by_appid(target_appid: str, total_reviews: int):
 def text_to_image(text, alignment="left", line_height=1.1):
     canvas = (
     Canvas()
-    .font_family("Roboto-Regular")
+    .font_family("app/static/Roboto-Regular.ttf")
     .font_size(24)
     .color("white")
     .background_color("black")

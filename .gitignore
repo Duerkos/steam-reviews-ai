@@ -1,4 +1,4 @@
-.streamlit
+.streamlit/secrets.toml
 mistral_env
 mistral-env
 uv.lock
@@ -6,3 +6,4 @@ inspect.json
 .python-version
 launch.sh
 jsonexample.json
+_pycache_
