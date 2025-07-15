@@ -61,7 +61,7 @@ def manage_summary_by_appid(target_appid: str, total_reviews: int):
 def text_to_image(text, alignment="left", line_height=1.1):
     canvas = (
     Canvas()
-    .font_family("Roboto-Regular.ttf")
+    .font_family("Roboto-Regular")
     .font_size(24)
     .color("white")
     .background_color("black")
@@ -303,8 +303,8 @@ if search_request:
             with col_banner:
                 st.image(stack_images_vertically(add_summary_text_image(img, summary, content["score"]),
                                    text_to_image(textwrap.fill(content["summary"], width=80) + "\n\n" +
-                                   wrap_list_of_strings(content["positive_factors"], emoji="✓", width=80) +"\n" +
-                                   wrap_list_of_strings(content["negative_factors"], emoji="X", width=80),
+                                   wrap_list_of_strings(content["positive_factors"], emoji="✅", width=80) +"\n" +
+                                   wrap_list_of_strings(content["negative_factors"], emoji="❌", width=80),
                                    alignment="left", line_height=1.5)))
             st.json(content, expanded=False)
         else: 
