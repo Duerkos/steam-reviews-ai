@@ -6,4 +6,4 @@ inspect.json
 .python-version
 launch.sh
 jsonexample.json
-_pycache_
+__pycache__/

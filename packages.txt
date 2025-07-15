@@ -2,3 +2,4 @@ libpq-dev
 libgl1-mesa-glx
 libegl1
 libglib2.0-0
+fonts-noto-color-emoji
