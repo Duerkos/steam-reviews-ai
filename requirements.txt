@@ -4,4 +4,4 @@ pillow
 mistralai
 pictex
 sqlalchemy
-psycopg2==2.9.6
+psycopg2-binary
