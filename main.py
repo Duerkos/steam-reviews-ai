@@ -171,6 +171,7 @@ def get_steam_df():
     
         list of all steam games
     """
+    return pd.DataFrame(get_request("https://api.steampowered.com/ISteamApps/GetAppList/v2/?")["applist"]["apps"])
     return pd.DataFrame(get_request("https://api.steampowered.com/ISteamApps/GetAppList/v2/?")["applist"]["apps"]).set_index("appid")
 def wrap_list_of_strings(strings, width=40, emoji=None):
     """Wrap a list of strings to a specified width."""
@@ -234,7 +235,6 @@ def check_client():
     if not is_client_initialized():
         st.write("Mistral client is not initialized. Please check your API key.")
         return False
-    st.write("Mistral client is initialized.")
     return True
 
 initialize()
@@ -283,20 +283,20 @@ else:
 df = pd.DataFrame(get_steam_df())
 df = df[df["name"].str.contains(search_input, case=False, na=False)]
 if search_request:
-    appname = st.selectbox("Select game", df["name"], disabled=not search_request, index=0)
+    app_result = st.selectbox("Select game", df, disabled=not search_request, index=0, format_func = lambda appid: df[df["appid"] == appid]["name"].values[0])
     col_image, col_stats = st.columns(2)
-    response = requests.get(f"https://cdn.akamai.steamstatic.com/steam/apps/{df[df['name']==appname].index[0]}/header.jpg")
+    response = requests.get(f"https://cdn.akamai.steamstatic.com/steam/apps/{app_result}/header.jpg")
     img = Image.open(BytesIO(response.content))
-    appid = df[df["name"]==appname].index[0]
+    appid = app_result
     summary = get_summary(appid)
-    summary["appid"] = df[df["name"]==appname].index[0]
+    summary["appid"] = app_result
     col_banner = st.container()
     col_analysis, col_link = st.columns(2)
     with col_link:
-        st.link_button("Store Link", f"https://store.steampowered.com/app/{df[df['name']==appname].index[0]}")
+        st.link_button("Store Link", f"https://store.steampowered.com/app/{app_result}")
     with col_analysis:
         if st.button("Generate Review Analysis"):
-            appid = df[df["name"]==appname].index[0]
+            appid = app_result
             content_raw = manage_summary_by_appid(str(appid), total_reviews=int(summary['total_reviews']))
             content = json.loads(content_raw)
             content = trim_factors(content, summary['total_positive']/ summary['total_reviews'] * 10)
