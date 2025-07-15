@@ -7,16 +7,14 @@ import pandas as pd
 import numpy as np
 import textwrap
 from io import BytesIO
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image
 from mistralai import Mistral, UserMessage, SystemMessage
 from requests.exceptions import SSLError
 from pictex import Canvas
-import pymysql
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from sqlalchemy import Column, Integer, String, DateTime
 from sqlalchemy.orm import declarative_base
-from sqlalchemy.sql import func
 
 Base = declarative_base()
 
@@ -28,51 +26,37 @@ class Summary(Base):
     json_object = Column(String)
     times_consulted = Column(Integer)
 
+def check_fresh_summary(result, total_reviews):
+    check_date = result.summary_date >= datetime.now()-timedelta(days=30)
+    check_reviews = total_reviews >= result.total_reviews*0.9
+    return check_date & check_reviews
 
-conn = st.connection("neon", type="sql")
-
-session = conn.session
-
-new_summary = Summary(appid="-1", summary_date=func.now(), total_reviews=2, json_object="miau", times_consulted=1)
-
-session.add(new_summary)
-session.commit()
-
-def check_fresh_summary(result):
-    return result.summary_date >= func.now()-timedelta(days=30)
-
-def manage_summary_by_appid(session, target_appid: str):
+def manage_summary_by_appid(target_appid: str, total_reviews: int):
+    conn = st.connection("neon", type="sql")
+    session = conn.session
     result = session.get(Summary, target_appid)
     json_summary = None
     if result is not None:
-        if check_fresh_summary(result):
+        if check_fresh_summary(result, total_reviews):
             json_summary = result.json_object
+            result.times_consulted += 1
+            session.commit()
         else:
             json_ai = get_summary_reviews_ai(target_appid)
             result.json_object = json_ai
-            result.summary_date = func.now
+            result.total_reviews = total_reviews
+            result.times_consulted += 1
+            result.summary_date = datetime.now()
             session.commit()
             json_summary = json_ai
     else:
         json_ai = get_summary_reviews_ai(target_appid)
-        new_summary = Summary(appid=target_appid, summary_date=func.now(), total_reviews=0, json_object=json_ai, times_consulted=1)
+        new_summary = Summary(appid=target_appid, summary_date=datetime.now(), total_reviews=total_reviews, json_object=json_ai, times_consulted=1)
         session.add(new_summary)
         session.commit()
         json_summary = json_ai
     session.close()
     return json_summary
-
-
-
-# Perform query.
-df = conn.query('SELECT * FROM summaries;', ttl="10m")
-
-session.close()
-
-# Print results.
-st.write(df)
-
-conn.session
 
 def text_to_image(text, alignment="left", line_height=1.1):
     canvas = (
@@ -120,8 +104,6 @@ def add_summary_text_image(header, summary, score=None):
     new_img.paste(img_text, (img.width, 0))
 
     return new_img
-
-from PIL import Image
 
 def stack_images_vertically(img_1, img_2):
     # Resize img_1 to match img_2 width
@@ -264,7 +246,6 @@ def trim_factors(content, steam_score):
         content["positive_factors"] = content["positive_factors"][:steam_score+1]
     if len(content["negative_factors"]) > (10-steam_score):
         content["negative_factors"] = content["negative_factors"][:(10-steam_score+1)]
-    st.write(content)
     return content
 
 def get_json_response(reviews):
@@ -290,7 +271,7 @@ def get_summary_reviews_ai(appid):
     
     raw_response = get_json_response([{"content": json.dumps(categorized_reviews), "role": "user"}])
     
-    content_raw = json.loads(raw_response.choices[0].message.content)
+    content_raw = raw_response.choices[0].message.content
 
     return content_raw
 
@@ -316,17 +297,16 @@ if search_request:
     with col_analysis:
         if st.button("Generate Review Analysis"):
             appid = df[df["name"]==appname].index[0]
-            content_raw = get_summary_reviews_ai(appid)
-            content = json.loads(json.dumps(content_raw))
+            content_raw = manage_summary_by_appid(str(appid), total_reviews=int(summary['total_reviews']))
+            content = json.loads(content_raw)
             content = trim_factors(content, summary['total_positive']/ summary['total_reviews'] * 10)
-            add_summary_text_image(img, summary, "something"),
             with col_banner:
                 st.image(stack_images_vertically(add_summary_text_image(img, summary, content["score"]),
                                    text_to_image(textwrap.fill(content["summary"], width=80) + "\n\n" +
                                    wrap_list_of_strings(content["positive_factors"], emoji="✅", width=80) +"\n" +
                                    wrap_list_of_strings(content["negative_factors"], emoji="❌", width=80),
                                    alignment="left", line_height=1.5)))
-            st.json(content)
+            st.json(content, expanded=False)
         else: 
             with col_banner:
                 st.image(add_summary_text_image(img, summary))
