@@ -1,4 +1,4 @@
 libpq-dev
 libgl1-mesa-glx
-libgl1
+libegl1
 libglib2.0-0
