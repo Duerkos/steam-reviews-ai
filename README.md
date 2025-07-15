@@ -1,2 +1,2 @@
 # steam-reviews
-Steam Reviews helper that requests the top reviews for a product and extracts the key words for the negative and positive reviews.
+Steam Reviews Summarizer that extracts a number of reviews from Steam Reviews API, sends them to an AI agent (currently mistral-small) and gets a summary in an image. A database is also used to cache AI results.

@@ -32,10 +32,16 @@ def check_fresh_summary(result, total_reviews):
     return check_date & check_reviews
 
 def manage_summary_by_appid(target_appid: str, total_reviews: int):
-    conn = st.connection("neon", type="sql")
-    session = conn.session
-    #result = conn.query('"SELECT * FROM summaries WHERE appid = :appid", {"appid": target_appid}')
-    result = session.get(Summary, target_appid)
+    try:
+        conn = st.connection("neon", type="sql")
+        session = conn.session
+        result = session.get(Summary, target_appid)
+    except Exception as e:
+        time.sleep(1)  # Wait for a while before retrying
+        st.error(f"Database connection error: {str(e)}")
+        conn = st.connection("neon", type="sql")
+        session = conn.session
+        result = session.get(Summary, target_appid)
     json_summary = None
     if result is not None:
         if check_fresh_summary(result, total_reviews):
@@ -75,9 +81,9 @@ def text_to_image(text, alignment="left", line_height=1.1):
     return img
 
 def add_summary_text_image(header, summary, score=None):
-    img = header.copy()  # Safer to work on a copy
+    img = header.copy()
     width, height = img.size
-    # Text content
+    # Create a text image with the summary
     text =  f"App ID: {summary['appid']}\n" + \
             f"Total Reviews: {summary['total_reviews']}\n" + \
             f"Positive Reviews: {summary['total_positive']}\n" + \
