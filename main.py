@@ -38,22 +38,29 @@ new_summary = Summary(appid="-1", summary_date=func.now(), total_reviews=2, json
 session.add(new_summary)
 session.commit()
 
-def get_summary_by_appid(session, target_appid: str):
-    result = session.query(Summary).filter(Summary.appid == target_appid).first()
-    return result
-
-
 def check_fresh_summary(result):
     return result.summary_date >= func.now()-timedelta(days=30)
 
 def manage_summary_by_appid(session, target_appid: str):
-    result = get_summary_by_appid(session, target_appid: str)
+    result = session.get(Summary, target_appid)
+    json_summary = None
     if result is not None:
         if check_fresh_summary(result):
-            return result.json_object
+            json_summary = result.json_object
         else:
-
+            json_ai = get_summary_reviews_ai(target_appid)
+            result.json_object = json_ai
+            result.summary_date = func.now
+            session.commit()
+            json_summary = json_ai
     else:
+        json_ai = get_summary_reviews_ai(target_appid)
+        new_summary = Summary(appid=target_appid, summary_date=func.now(), total_reviews=0, json_object=json_ai, times_consulted=1)
+        session.add(new_summary)
+        session.commit()
+        json_summary = json_ai
+    session.close()
+    return json_summary
 
 
 
