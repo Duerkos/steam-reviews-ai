@@ -1,2 +1,3 @@
 libpq-dev
-libgl1
+nvidia-driver-libs:i386
+libgl1-mesa-glx
