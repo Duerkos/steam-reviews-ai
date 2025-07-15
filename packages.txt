@@ -1,1 +1,1 @@
-libq-dev
+libpq-dev
