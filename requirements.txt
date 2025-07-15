@@ -3,6 +3,6 @@ pandas
 pillow
 mistralai
 pictex
-cloud-sql-python-connector[pymysql]
 sqlalchemy
 psycopg2
+skia-python==87.8
