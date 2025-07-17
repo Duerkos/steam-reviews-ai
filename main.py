@@ -329,9 +329,22 @@ def get_summary_reviews_ai(appid):
 def get_header_image(appid):
     """Return the header image for a given appid."""
     try:
-        response = requests.get(f"https://cdn.akamai.steamstatic.com/steam/apps/{appid}/header.jpg")
-        img = Image.open(BytesIO(response.content))
-        return img
+        response = requests.get(f"http://store.steampowered.com/api/appdetails/?appids={appid}&filters=basic")
+        data = response.json()
+        if data and str(appid) in data:
+            img_url = data[str(appid)]["data"]["header_image"]
+            img = Image.open(BytesIO(requests.get(img_url).content))
+            return img
+    except Exception as e:
+        return None
+def get_capsule_url(appid):
+    """Return the capsule image for a given appid."""
+    try:
+        response = requests.get(f"http://store.steampowered.com/api/appdetails/?appids={appid}&filters=basic")
+        data = response.json()
+        if data and str(appid) in data:
+            img_url = data[str(appid)]["data"]["capsule_image"]
+            return img_url
     except Exception as e:
         return None
 
@@ -348,16 +361,16 @@ if search_request and generated_review == False:
     if df.empty:
         st.write("No games found for the search term.")
         st.stop()
-    df["image"] = df["appid"].apply(lambda x: "https://cdn.akamai.steamstatic.com/steam/apps/"+str(x)+"/header.jpg")
+    df["image"] = df["appid"].apply(lambda x: get_capsule_url(x))
     game_selected_event = dataframe_selector.dataframe(df[["image","name","appid"]], 
                  use_container_width=True,
                  hide_index=True,
-                 row_height= 100,
+                 row_height= 87,
                  selection_mode="single-row",
                  on_select = "rerun",
                  key="game_selected_event",
                  column_config={"image": st.column_config.ImageColumn(
-            "Banner", help="Game Banner", width="medium", pinned=True
+            "Banner", help="Game Banner", width=231, pinned=True
         ),
                  "appid": st.column_config.NumberColumn(
             "App ID", help="Steam App ID", width="small", format="%d"),
