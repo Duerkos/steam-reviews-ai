@@ -5,3 +5,5 @@ mistralai
 pictex
 sqlalchemy
 psycopg2-binary
+thefuzz
+streamlit-image-select

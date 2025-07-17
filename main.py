@@ -6,12 +6,14 @@ import requests
 import pandas as pd
 import numpy as np
 import textwrap
+import re
 from io import BytesIO
 from PIL import Image
 from mistralai import Mistral, UserMessage, SystemMessage
 from requests.exceptions import SSLError
 from pictex import Canvas
 from datetime import datetime, timedelta
+from thefuzz import fuzz, process
 
 from sqlalchemy import Column, Integer, String, DateTime
 from sqlalchemy.orm import declarative_base
@@ -38,7 +40,6 @@ def manage_summary_by_appid(target_appid: str, total_reviews: int):
         result = session.get(Summary, target_appid)
     except Exception as e:
         time.sleep(1)  # Wait for a while before retrying
-        st.error(f"Database connection error: {str(e)}")
         conn = st.connection("neon", type="sql")
         session = conn.session
         result = session.get(Summary, target_appid)
@@ -190,6 +191,31 @@ def wrap_list_of_strings(strings, width=40, emoji=None):
         wrapped_strings.append(wrapped_string)
     return "\n".join(wrapped_strings)
 
+def fuzzy_phrase_match(text, target):
+    def get_fuzzy_score(text_words, target_words):
+        scores = []
+        start_word= 0
+        for tw in target_words:
+            # Calculate the fuzzy score for each word in the target against all words in the text in order
+            word_scores = [(fuzz.ratio(tw, word)) for word in text_words[start_word:]]
+            best_score = max(word_scores) if word_scores else 0
+            if best_score > 0:
+                start_word += word_scores.index(best_score) + 1
+            scores.append(best_score)
+        avg_score = sum(scores) / len(scores)
+        return avg_score
+    #re.sub('[^\w\s]', '', x).lower(), re.sub('[^\w\s]', '', search_input).lower(), threshold=90)
+    target_words = target.lower().split()
+    text_words = text.lower().split()
+    score_0 = get_fuzzy_score(text_words, target_words)
+    score_1 = 0
+    if bool(re.search(r'[^a-zA-Z0-9]', text)):
+        # If there is punctuation, we will try to match without it
+        target_words = re.sub('[^\w\s]', '', target).lower().split()
+        text_words = re.sub('[^\w\s]', '', text).lower().split()
+        score_1 = get_fuzzy_score(text_words, target_words) - 2
+    return max(score_0, score_1)
+
 def get_summary(appid):
     """Return summary of reviews for a given appid."""
     url = "https://store.steampowered.com/appreviews/" + str(appid)
@@ -282,18 +308,31 @@ def get_summary_reviews_ai(appid):
 
     return content_raw
 
+def get_header_image(appid):
+    """Return the header image for a given appid."""
+    try:
+        response = requests.get(f"https://cdn.akamai.steamstatic.com/steam/apps/{appid}/header.jpg")
+        img = Image.open(BytesIO(response.content))
+        return img
+    except Exception as e:
+        return None
+
 search_input = st.text_input("Search Steam Game", key="search_input")
 if search_input == "":
     search_request = False
 else:
     search_request = True
 df = pd.DataFrame(get_steam_df())
-df = df[df["name"].str.contains(search_input, case=False, na=False)]
+df["fuzzy_score"] = df["name"].apply(lambda x: fuzzy_phrase_match(x, search_input))
+df["len_name"] = df["name"].apply(lambda x: -len(x))
+df = df[df["fuzzy_score"] > 90]  # Filter out low fuzzy scores
+df = df.sort_values(by=["fuzzy_score","len_name"], ascending=False)
+df = df.head(30)  # Limit to 30 results for performance
 if search_request:
     app_result = st.selectbox("Select game", df, disabled=not search_request, index=0, format_func = lambda appid: df[df["appid"] == appid]["name"].values[0])
+    #app_result = st.selectbox("Select game", df["appid"], disabled=not search_request, index=0, format_func= lambda appid: get_header_image(appid))
     col_image, col_stats = st.columns(2)
-    response = requests.get(f"https://cdn.akamai.steamstatic.com/steam/apps/{app_result}/header.jpg")
-    img = Image.open(BytesIO(response.content))
+    img = get_header_image(app_result)
     appid = app_result
     summary = get_summary(appid)
     summary["appid"] = app_result
@@ -302,18 +341,36 @@ if search_request:
     with col_link:
         st.link_button("Store Link", f"https://store.steampowered.com/app/{app_result}")
     with col_analysis:
-        if st.button("Generate Review Analysis"):
-            appid = app_result
-            content_raw = manage_summary_by_appid(str(appid), total_reviews=int(summary['total_reviews']))
-            content = json.loads(content_raw)
-            content = trim_factors(content, summary['total_positive']/ summary['total_reviews'] * 10)
-            with col_banner:
-                st.image(stack_images_vertically(add_summary_text_image(img, summary, content["score"]),
-                                   text_to_image(textwrap.fill(content["summary"], width=80) + "\n\n" +
-                                   wrap_list_of_strings(content["positive_factors"], emoji="✅", width=80) +"\n" +
-                                   wrap_list_of_strings(content["negative_factors"], emoji="❌", width=80),
-                                   alignment="left", line_height=1.5)))
-            st.json(content, expanded=False)
-        else: 
-            with col_banner:
-                st.image(add_summary_text_image(img, summary))
+        generated_review = False
+        if generated_review == False:
+            if st.button("Generate Review Analysis"):
+                appid = app_result
+                content_raw = manage_summary_by_appid(str(appid), total_reviews=int(summary['total_reviews']))
+                content = json.loads(content_raw)
+                content = trim_factors(content, summary['total_positive']/ summary['total_reviews'] * 10)
+                generated_review = True
+                #too small
+    if generated_review:
+        options_bug = [
+            "Bullet points repeat",
+            "Summary is not correct",
+            "Too long",
+            "Missing information",
+            "Wrong remarks"
+        ]
+        selected_option = st.radio("Choose the issue:", options)
+
+        if selected_option:
+            st.write(f"You selected: {selected_option.replace(' ', '_').lower()}")
+
+    with col_banner:
+        if generated_review:
+            st.image(stack_images_vertically(add_summary_text_image(img, summary, content["score"]),
+                                text_to_image(textwrap.fill(content["summary"], width=80) + "\n\n" +
+                                wrap_list_of_strings(content["positive_factors"], emoji="✅", width=80) +"\n" +
+                                wrap_list_of_strings(content["negative_factors"], emoji="❌", width=80),
+                                alignment="left", line_height=1.5)))
+        else:
+            st.image(add_summary_text_image(img, summary))
+    if generated_review:
+        st.json(content, expanded=False)
