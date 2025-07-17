@@ -13,7 +13,7 @@ from mistralai import Mistral, UserMessage, SystemMessage
 from requests.exceptions import SSLError
 from pictex import Canvas
 from datetime import datetime, timedelta
-from thefuzz import fuzz, process
+from thefuzz import fuzz
 
 from sqlalchemy import Column, Integer, String, DateTime
 from sqlalchemy.orm import declarative_base
@@ -181,6 +181,17 @@ def get_steam_df():
     """
     return pd.DataFrame(get_request("https://api.steampowered.com/ISteamApps/GetAppList/v2/?")["applist"]["apps"])
     return pd.DataFrame(get_request("https://api.steampowered.com/ISteamApps/GetAppList/v2/?")["applist"]["apps"]).set_index("appid")
+
+@st.cache_data
+def get_steam_df_search(search_input):
+    df = pd.DataFrame(get_steam_df())
+    df["fuzzy_score"] = df["name"].apply(lambda x: fuzzy_phrase_match(x, search_input))
+    df["len_name"] = df["name"].apply(lambda x: -len(x))
+    df = df[df["fuzzy_score"] > 90]  # Filter out low fuzzy scores
+    df = df.sort_values(by=["fuzzy_score","len_name"], ascending=False)
+    df = df.head(30)  # Limit to 30 results for performance
+    return df
+
 def wrap_list_of_strings(strings, width=40, emoji=None):
     """Wrap a list of strings to a specified width."""
     wrapped_strings = []
@@ -253,6 +264,13 @@ def parse_steamreviews_request(appid):
         summary = json_data['query_summary']
         #st.write(json_data)
     return good_review_list, bad_review_list, summary
+
+def handle_selection():
+    st.session_state.selection_made = True
+
+if 'selection_made' not in st.session_state:
+    st.session_state.selection_made = False
+
 # Mistral model 
 mistral_model = "mistral-small-latest"
 client = Mistral(st.secrets["MISTRAL_API_KEY"])
@@ -320,21 +338,43 @@ def get_header_image(appid):
 search_input = st.text_input("Search Steam Game", key="search_input")
 if search_input == "":
     search_request = False
+    st.stop()
 else:
     search_request = True
-df = pd.DataFrame(get_steam_df())
-df["fuzzy_score"] = df["name"].apply(lambda x: fuzzy_phrase_match(x, search_input))
-df["len_name"] = df["name"].apply(lambda x: -len(x))
-df = df[df["fuzzy_score"] > 90]  # Filter out low fuzzy scores
-df = df.sort_values(by=["fuzzy_score","len_name"], ascending=False)
-df = df.head(30)  # Limit to 30 results for performance
-if search_request:
-    app_result = st.selectbox("Select game", df, disabled=not search_request, index=0, format_func = lambda appid: df[df["appid"] == appid]["name"].values[0])
-    #app_result = st.selectbox("Select game", df["appid"], disabled=not search_request, index=0, format_func= lambda appid: get_header_image(appid))
+    generated_review = False
+dataframe_selector = st.empty()
+if search_request and generated_review == False:
+    df = get_steam_df_search(search_input)
+    if df.empty:
+        st.write("No games found for the search term.")
+        st.stop()
+    df["image"] = df["appid"].apply(lambda x: "https://cdn.akamai.steamstatic.com/steam/apps/"+str(x)+"/header.jpg")
+    game_selected_event = dataframe_selector.dataframe(df[["image","name","appid"]], 
+                 use_container_width=True,
+                 hide_index=True,
+                 row_height= 100,
+                 selection_mode="single-row",
+                 on_select = "rerun",
+                 key="game_selected_event",
+                 column_config={"image": st.column_config.ImageColumn(
+            "Banner", help="Game Banner", width="medium", pinned=True
+        ),
+                 "appid": st.column_config.NumberColumn(
+            "App ID", help="Steam App ID", width="small", format="%d"),
+                "name": st.column_config.TextColumn(
+            "Name", help="Steam Game Name", width="medium")
+        })
+    index_selected = game_selected_event.selection.rows
+    if len(index_selected) == 0:
+        st.stop()
+    app_result = df.iloc[index_selected].iloc[0]["appid"]
     col_image, col_stats = st.columns(2)
     img = get_header_image(app_result)
     appid = app_result
     summary = get_summary(appid)
+    if summary["total_reviews"] == 0:
+        st.write("No reviews found for this game.")
+        st.stop()
     summary["appid"] = app_result
     col_banner = st.container()
     col_analysis, col_link = st.columns(2)
@@ -358,11 +398,6 @@ if search_request:
             "Missing information",
             "Wrong remarks"
         ]
-        selected_option = st.radio("Choose the issue:", options)
-
-        if selected_option:
-            st.write(f"You selected: {selected_option.replace(' ', '_').lower()}")
-
     with col_banner:
         if generated_review:
             st.image(stack_images_vertically(add_summary_text_image(img, summary, content["score"]),
@@ -373,4 +408,5 @@ if search_request:
         else:
             st.image(add_summary_text_image(img, summary))
     if generated_review:
+        dataframe_selector.empty()
         st.json(content, expanded=False)
