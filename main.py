@@ -29,17 +29,20 @@ class Summary(Base):
     times_consulted = Column(Integer)
 
 def check_fresh_summary(result, total_reviews):
+    check_summary = result.json_object is not None
     check_date = result.summary_date >= datetime.now()-timedelta(days=30)
     check_reviews = total_reviews >= result.total_reviews*0.9
-    return check_date & check_reviews
+    return check_date & check_reviews & check_summary
 
 def manage_summary_by_appid(target_appid: str, total_reviews: int):
     try:
+        #st.write("Connecting to database... try 1")
         conn = st.connection("neon", type="sql")
         session = conn.session
         result = session.get(Summary, target_appid)
     except Exception as e:
-        time.sleep(1)  # Wait for a while before retrying
+        time.sleep(5)  # Wait for a while before retrying
+        #st.write(f"Retrying connection to database... Error: {e}")
         conn = st.connection("neon", type="sql")
         session = conn.session
         result = session.get(Summary, target_appid)
@@ -49,7 +52,11 @@ def manage_summary_by_appid(target_appid: str, total_reviews: int):
             json_summary = result.json_object
             result.times_consulted += 1
             session.commit()
+            #st.write("Using cached summary from database.")
+            #st.write(json_summary)
+            #st.write(result)
         else:
+            "summary is not fresh, generating new summary."
             json_ai = get_summary_reviews_ai(target_appid)
             result.json_object = json_ai
             result.total_reviews = total_reviews
@@ -57,12 +64,16 @@ def manage_summary_by_appid(target_appid: str, total_reviews: int):
             result.summary_date = datetime.now()
             session.commit()
             json_summary = json_ai
+            #st.write("Updated summary in database.")
+            #st.write(json_summary)
     else:
         json_ai = get_summary_reviews_ai(target_appid)
         new_summary = Summary(appid=target_appid, summary_date=datetime.now(), total_reviews=total_reviews, json_object=json_ai, times_consulted=1)
         session.add(new_summary)
         session.commit()
         json_summary = json_ai
+        #st.write("Summary retrieved or created.")
+        #st.write(json_summary)
     session.close()
     return json_summary
 
@@ -194,7 +205,6 @@ def get_steam_df_search(search_input):
     df = df.head(30)  # Limit to 30 results for performance
     df["total_reviews"] = df["appid"].apply(lambda x: get_reviews(x))
     df = df[df["total_reviews"] > 0]  # Ensure only games with reviews are included
-    df["image"] = df["appid"].apply(lambda x: get_capsule_url(x))
     return df
 
 def wrap_list_of_strings(strings, width=40, emoji=None):
@@ -316,6 +326,8 @@ def get_json_response(reviews):
             stream=False,
             response_format={"type": "json_object"}
             )
+        if response is None or not hasattr(response, 'choices') or not response.choices:
+            return get_json_response(reviews)  # Retry if no response or empty choices
         return response    
     except Exception as e:
         st.write(f"Error during web search: {str(e)}")
@@ -334,6 +346,19 @@ def get_summary_reviews_ai(appid):
     content_raw = raw_response.choices[0].message.content
 
     return content_raw
+
+def format_string_search(df, appid):
+    """Format the string for the selectbox."""
+    low_reviews = "❔"
+    enough_reviews = "✅"
+    popular_game = "🔥"
+    if df[df["appid"] == appid]["total_reviews"].values[0] < 50:
+        review_emoji = low_reviews
+    elif df[df["appid"] == appid]["total_reviews"].values[0] < 1000:
+        review_emoji = enough_reviews
+    else:
+        review_emoji = popular_game
+    return review_emoji+" "+df[df["appid"] == appid]["name"].values[0]
 
 def get_header_image(appid):
     """Return the header image for a given appid."""
@@ -370,25 +395,7 @@ if search_request and generated_review == False:
     if df.empty:
         st.write("No games found for the search term.")
         st.stop()
-    game_selected_event = dataframe_selector.dataframe(df[["image","name","appid", "total_reviews"]],
-                 use_container_width=True,
-                 hide_index=True,
-                 row_height= 87,
-                 selection_mode="single-row",
-                 on_select = "rerun",
-                 key="game_selected_event",
-                 column_config={"image": st.column_config.ImageColumn(
-            "Banner", help="Game Banner", width=231, pinned=True
-        ),
-                 "appid": st.column_config.NumberColumn(
-            "App ID", help="Steam App ID", width="small", format="%d"),
-                "name": st.column_config.TextColumn(
-            "Name", help="Steam Game Name", width="medium")
-        })
-    index_selected = game_selected_event.selection.rows
-    if len(index_selected) == 0:
-        st.stop()
-    app_result = df.iloc[index_selected].iloc[0]["appid"]
+    app_result = st.selectbox("Select game", df, disabled=not search_request, index=0, format_func = lambda appid: format_string_search(df, appid))
     col_image, col_stats = st.columns(2)
     img = get_header_image(app_result)
     appid = app_result
