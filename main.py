@@ -184,12 +184,17 @@ def get_steam_df():
 
 @st.cache_data
 def get_steam_df_search(search_input):
+    """Return a DataFrame of steam games matching the search input.
+    """
     df = pd.DataFrame(get_steam_df())
     df["fuzzy_score"] = df["name"].apply(lambda x: fuzzy_phrase_match(x, search_input))
     df["len_name"] = df["name"].apply(lambda x: -len(x))
     df = df[df["fuzzy_score"] > 90]  # Filter out low fuzzy scores
     df = df.sort_values(by=["fuzzy_score","len_name"], ascending=False)
     df = df.head(30)  # Limit to 30 results for performance
+    df["total_reviews"] = df["appid"].apply(lambda x: get_reviews(x))
+    df = df[df["total_reviews"] > 0]  # Ensure only games with reviews are included
+    df["image"] = df["appid"].apply(lambda x: get_capsule_url(x))
     return df
 
 def wrap_list_of_strings(strings, width=40, emoji=None):
@@ -233,6 +238,10 @@ def get_summary(appid):
     parameters = {"json": 1, "purchase_type": "all", "review_type": "all"}
     json_data = get_request(url, parameters)
     return json_data['query_summary']
+
+def get_reviews(appid):
+    """Return if there are reviews for a given appid."""
+    return get_summary(appid)['total_reviews']
 
 @st.cache_data
 def parse_steamreviews_request(appid):
@@ -357,12 +366,11 @@ else:
     generated_review = False
 dataframe_selector = st.empty()
 if search_request and generated_review == False:
-    df = get_steam_df_search(search_input)
+    df = get_steam_df_search(search_input).copy()
     if df.empty:
         st.write("No games found for the search term.")
         st.stop()
-    df["image"] = df["appid"].apply(lambda x: get_capsule_url(x))
-    game_selected_event = dataframe_selector.dataframe(df[["image","name","appid"]], 
+    game_selected_event = dataframe_selector.dataframe(df[["image","name","appid", "total_reviews"]],
                  use_container_width=True,
                  hide_index=True,
                  row_height= 87,
