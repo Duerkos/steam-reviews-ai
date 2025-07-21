@@ -155,4 +155,4 @@ if search_request:
         st.write("No reviews found for this game.")
         st.stop()
     else:
-        st.page_link("pages/1-Summary.py", label="Generate Review Analysis")
+        st.page_link("pages/1-Summary.py", label=":red-background[**Review Analysis**]") 

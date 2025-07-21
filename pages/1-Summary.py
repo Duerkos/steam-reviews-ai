@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 
 from sqlalchemy import Column, Integer, String, DateTime
 from sqlalchemy.orm import declarative_base
-from utils import get_header_image, get_summary, wrap_list_of_strings, add_summary_text_image, text_to_image
+from utils import get_header_image, get_summary, wrap_list_of_strings, add_summary_text_image, text_to_image, get_request
 
 Base = declarative_base()
 
@@ -178,16 +178,46 @@ else:
     if "appid" in st.query_params:
         app_result = st.query_params["appid"]
     else:
-        st.page_link("Search.py", label="Search for a game first.")
+        st.page_link("Search.py", label=":red-background[**Search a game first**]")
         st.stop()
+        
+# Mistral model 
+mistral_model = "mistral-small-latest"
+client = Mistral(st.secrets["MISTRAL_API_KEY"])
+# Agent IDs
+review_summary_id = "review_summary_agent"
+# Initialize everything
+def initialize():
+    check_client()
+# Check if the client is initialized
+def is_client_initialized():
+    return client is not None and st.secrets["MISTRAL_API_KEY"] is not None
+def check_client():
+    if not is_client_initialized():
+        st.write("Mistral client is not initialized. Please check your API key.")
+        return False
+    return True
 
-col_banner = st.container()
+initialize()
+
+col_banner = st.empty()
 col_back = st.container()
 generated_review = False
 img = get_header_image(app_result)
 summary = get_summary(app_result)
+with col_banner.container():
+    st.write("### Steam Review Analysis in progress")
+    summary_image = add_summary_text_image(img, summary)
+    im_file = BytesIO()
+    summary_image.save(im_file, format="JPEG")
+    im_bytes = im_file.getvalue()
+    image_base64 = base64.b64encode(im_bytes).decode()
+    link = f"https://store.steampowered.com/app/{app_result}"
+    html = f"<a href='{link}'><img src='data:image/png;base64,{image_base64}'></a>"
+    first_banner = st.empty()
+    first_banner.markdown(html, unsafe_allow_html=True)
 with col_back:
-    st.page_link("Search.py", label="Search")
+    st.page_link("Search.py", label=":red-background[**Search**]")
 if summary["total_reviews"] == 0:
     st.write("No reviews found for this game.")
     st.stop()
@@ -203,28 +233,21 @@ if generated_review:
         "Missing information",
         "Wrong remarks"
     ]
-with col_banner:
-    if generated_review:
-        review_img = stack_images_vertically(stack_images_vertically(add_summary_text_image(img, summary, content["score"]),
-                            text_to_image(textwrap.fill(content["summary"], width=80) + "\n\n" +
-                            wrap_list_of_strings(content["positive_factors"], emoji="✅", width=80) +"\n" +
-                            wrap_list_of_strings(content["negative_factors"], emoji="❌", width=80),
-                            alignment="left", line_height=1.5)), water_mark_image(text="www.steam-review.streamlit.app                                                                    by github.com/duerkos"))
-        im_file = BytesIO()
-        review_img.save(im_file, format="JPEG")
-        im_bytes = im_file.getvalue()
-        image_base64 = base64.b64encode(im_bytes).decode()
-        link = f"https://store.steampowered.com/app/{app_result}"
-        html = f"<a href='{link}'><img src='data:image/png;base64,{image_base64}'></a>"
-        st.markdown(html, unsafe_allow_html=True)
-    else:
-        summary_image = add_summary_text_image(img, summary)
-        im_file = BytesIO()
-        summary_image.save(im_file, format="JPEG")
-        im_bytes = im_file.getvalue()
-        image_base64 = base64.b64encode(im_bytes).decode()
-        link = f"https://store.steampowered.com/app/{app_result}"
-        html = f"<a href='{link}'><img src='data:image/png;base64,{image_base64}'></a>"
-        st.markdown(html, unsafe_allow_html=True)
+
 if generated_review:
+    with col_banner.container():
+        first_banner.empty()
+        review_img = stack_images_vertically(stack_images_vertically(add_summary_text_image(img, summary, content["score"]),
+                    water_mark_image(text="www.steam-review.streamlit.app                                                                    by github.com/duerkos")),
+                    text_to_image(textwrap.fill(content["summary"], width=80) + "\n\n" +
+                    wrap_list_of_strings(content["positive_factors"], emoji="✅", width=80) +"\n" +
+                    wrap_list_of_strings(content["negative_factors"], emoji="❌", width=80),
+                    alignment="left", line_height=1.5))
+        summary_file = BytesIO()
+        review_img.save(summary_file, format="JPEG")
+        im_bytes = summary_file.getvalue()
+        image_base64 = base64.b64encode(im_bytes).decode()
+        link = f"https://store.steampowered.com/app/{app_result}"
+        html2 = f"<a href='{link}'><img src='data:image/png;base64,{image_base64}'></a>"
+        st.markdown(html2, unsafe_allow_html=True)
     st.json(content, expanded=False)
