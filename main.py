@@ -1,4 +1,5 @@
 #main file
+from os import link
 import streamlit as st
 import json
 import time
@@ -7,11 +8,12 @@ import pandas as pd
 import numpy as np
 import textwrap
 import re
+import base64
 from io import BytesIO
 from PIL import Image
 from mistralai import Mistral, UserMessage, SystemMessage
 from requests.exceptions import SSLError
-from pictex import Canvas
+from pictex import Canvas, LinearGradient
 from datetime import datetime, timedelta
 from thefuzz import fuzz
 
@@ -333,6 +335,20 @@ def get_json_response(reviews):
         st.write(f"Error during web search: {str(e)}")
         return 0
 
+def water_mark_image(text="Steam Reviews AI", font_size=24):
+    """Add a watermark to the image."""
+    canvas = (
+        Canvas()
+        .font_family("app/static/Roboto-Regular.ttf")
+        .font_size(font_size)
+        .color("white")
+        .background_color(LinearGradient(["#00000000", "#ff8b00"]))
+        .padding(10)
+        .alignment("right")
+    )
+    img = canvas.render(text).to_pillow()
+    return img
+
 def get_summary_reviews_ai(appid):
     good_review_list, bad_review_list, summary_not_needed = parse_steamreviews_request(appid)
     
@@ -388,9 +404,18 @@ if search_input == "":
     st.stop()
 else:
     search_request = True
-    generated_review = False
-dataframe_selector = st.empty()
-if search_request and generated_review == False:
+    if "generated_review" not in st.session_state:
+        st.session_state.generated_review = False
+    if "last_search" not in st.session_state:
+        st.session_state.last_search = ""
+        
+    # Reset only if search input changed
+    if search_input != st.session_state.last_search:
+        st.session_state.generated_review = False
+        st.session_state.last_search = search_input
+
+
+if search_request and not st.session_state.generated_review:
     df = get_steam_df_search(search_input).copy()
     if df.empty:
         st.write("No games found for the search term.")
@@ -407,18 +432,18 @@ if search_request and generated_review == False:
     col_banner = st.container()
     col_analysis, col_link = st.columns(2)
     with col_link:
-        st.link_button("Store Link", f"https://store.steampowered.com/app/{app_result}")
+        if not st.session_state.generated_review:
+            st.link_button("Store Link", f"https://store.steampowered.com/app/{app_result}")
     with col_analysis:
-        generated_review = False
-        if generated_review == False:
+        if not st.session_state.generated_review:
             if st.button("Generate Review Analysis"):
                 appid = app_result
                 content_raw = manage_summary_by_appid(str(appid), total_reviews=int(summary['total_reviews']))
                 content = json.loads(content_raw)
                 content = trim_factors(content, summary['total_positive']/ summary['total_reviews'] * 10)
-                generated_review = True
+                st.session_state.generated_review = True
                 #too small
-    if generated_review:
+    if st.session_state.generated_review:
         options_bug = [
             "Bullet points repeat",
             "Summary is not correct",
@@ -427,14 +452,20 @@ if search_request and generated_review == False:
             "Wrong remarks"
         ]
     with col_banner:
-        if generated_review:
-            st.image(stack_images_vertically(add_summary_text_image(img, summary, content["score"]),
+        if st.session_state.generated_review:
+            review_img = stack_images_vertically(stack_images_vertically(add_summary_text_image(img, summary, content["score"]),
                                 text_to_image(textwrap.fill(content["summary"], width=80) + "\n\n" +
                                 wrap_list_of_strings(content["positive_factors"], emoji="✅", width=80) +"\n" +
                                 wrap_list_of_strings(content["negative_factors"], emoji="❌", width=80),
-                                alignment="left", line_height=1.5)))
+                                alignment="left", line_height=1.5)), water_mark_image(text="www.steam-review.streamlit.app                                                                    by github.com/duerkos"))
+            im_file = BytesIO()
+            review_img.save(im_file, format="JPEG")
+            im_bytes = im_file.getvalue()
+            image_base64 = base64.b64encode(im_bytes).decode()
+            link = f"https://store.steampowered.com/app/{app_result}"
+            html = f"<a href='{link}'><img src='data:image/png;base64,{image_base64}'></a>"
+            st.markdown(html, unsafe_allow_html=True)
         else:
             st.image(add_summary_text_image(img, summary))
-    if generated_review:
-        dataframe_selector.empty()
+    if st.session_state.generated_review:
         st.json(content, expanded=False)
