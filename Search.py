@@ -82,25 +82,6 @@ def handle_selection():
 if 'selection_made' not in st.session_state:
     st.session_state.selection_made = False
 
-# Mistral model 
-mistral_model = "mistral-small-latest"
-client = Mistral(st.secrets["MISTRAL_API_KEY"])
-# Agent IDs
-review_summary_id = "review_summary_agent"
-# Initialize everything
-def initialize():
-    check_client()
-# Check if the client is initialized
-def is_client_initialized():
-    return client is not None and st.secrets["MISTRAL_API_KEY"] is not None
-def check_client():
-    if not is_client_initialized():
-        st.write("Mistral client is not initialized. Please check your API key.")
-        return False
-    return True
-
-initialize()
-
 def format_string_search(df, appid):
     """Format the string for the selectbox."""
     low_reviews = "❔"
@@ -138,7 +119,16 @@ if search_request:
     if df.empty:
         st.write("No games found for the search term.")
         st.stop()
-    app_result = st.selectbox("Select game", df, disabled=not search_request, index=0, format_func = lambda appid: format_string_search(df, appid))
+    col_1, col_2 = st.columns([0.9, 0.1], vertical_alignment="bottom")
+    with col_1:
+        app_result = st.selectbox("Select game", df, disabled=not search_request, index=0, format_func = lambda appid: format_string_search(df, appid))
+    with col_2:
+        with st.popover("", icon="ℹ️"):
+            st.write("This app uses only English Reviews from Steam Users.")
+            st.write("❔: Game has less than 50 reviews.")
+            st.write("✅: Game has more than 50 reviews.")
+            st.write("🔥: Game has more than 1000 reviews.")
+            st.write("Games with no reviews do not appear.")
     st.session_state.app_result = app_result
     col_image, col_stats = st.columns(2)
     img = get_header_image(app_result)
@@ -151,8 +141,15 @@ if search_request:
     link = f"https://store.steampowered.com/app/{app_result}"
     html = f"<a href='{link}'><img src='data:image/png;base64,{image_base64}'></a>"
     st.markdown(html, unsafe_allow_html=True)
+    col_summary, col_help = st.columns(2, vertical_alignment="center")
+    with col_help:
+        with st.popover("Review Information", icon="ℹ️"):
+            st.write("This app uses the Steam API to fetch game reviews and stats.")
+            st.write("It uses AI to generate a review summary based on the reviews.")
+            st.write("The reviews used and the stats are only from English reviews.")
     if summary["total_reviews"] == 0:
         st.write("No reviews found for this game.")
         st.stop()
     else:
-        st.page_link("pages/1-Summary.py", label=":red-background[**Review Analysis**]") 
+        with col_summary:
+            st.page_link("pages/1-Summary.py", label=":red-background[**Review Analysis**]") 
