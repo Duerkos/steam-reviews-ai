@@ -141,15 +141,8 @@ if search_request:
     link = f"https://store.steampowered.com/app/{app_result}"
     html = f"<a href='{link}'><img src='data:image/png;base64,{image_base64}'></a>"
     st.markdown(html, unsafe_allow_html=True)
-    col_summary, col_help = st.columns(2, vertical_alignment="center")
-    with col_help:
-        with st.popover("Review Information", icon="ℹ️"):
-            st.write("This app uses the Steam API to fetch game reviews and stats.")
-            st.write("It uses AI to generate a review summary based on the reviews.")
-            st.write("The reviews used and the stats are only from English reviews.")
     if summary["total_reviews"] == 0:
         st.write("No reviews found for this game.")
         st.stop()
     else:
-        with col_summary:
-            st.page_link("pages/1-Summary.py", label=":red-background[**Review Analysis**]") 
+        st.page_link("pages/1-Summary.py", label=":red-background[**Review Analysis**]") 
