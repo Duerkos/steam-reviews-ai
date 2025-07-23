@@ -220,7 +220,7 @@ if "appid" in st.query_params:
     app_result = st.query_params["appid"]
 elif "app_result" in st.session_state:
     app_result = st.session_state.app_result
-    st.query_params["appid"] = app_result
+    st.query_params["appid"] = str(app_result)
 else:
     st.page_link("Search.py", label=":red-background[**Search a game first**]")
     st.stop()
