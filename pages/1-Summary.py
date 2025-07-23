@@ -54,16 +54,11 @@ def manage_summary_by_appid(target_appid: str, total_reviews: int):
         result = session.get(Summary, target_appid)
     json_summary = None
     if result is not None:
-        st.write(f"The summary bug is {result.bug}. The summary date is {result.summary_date}.")
         if check_fresh_summary(result, total_reviews) and result.bug is False:
             json_summary = result.json_object
             result.times_consulted += 1
             session.commit()
-            #st.write("Using cached summary from database.")
-            #st.write(json_summary)
-            #st.write(result)
         else:
-            "summary is not fresh, generating new summary."
             json_ai = get_summary_reviews_ai(target_appid)
             result.json_object = json_ai
             result.total_reviews = total_reviews
@@ -221,12 +216,15 @@ def handle_bug_report():
 
 if "app_result" in st.session_state:
     app_result = st.session_state.app_result
+    
+if "appid" in st.query_params:
+    app_result = st.query_params["appid"]
+elif "app_result" in st.session_state:
+    app_result = st.session_state.app_result
+    st.query_params["appid"] = app_result
 else:
-    if "appid" in st.query_params:
-        app_result = st.query_params["appid"]
-    else:
-        st.page_link("Search.py", label=":red-background[**Search a game first**]")
-        st.stop()
+    st.page_link("Search.py", label=":red-background[**Search a game first**]")
+    st.stop()
         
 # Mistral model 
 mistral_model = "mistral-small-latest"

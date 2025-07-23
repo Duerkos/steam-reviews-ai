@@ -73,10 +73,15 @@ I have setup a [Ko-fi](https://ko-fi.com/duerkos) page to support my work, if yo
 If you want to contribute, feel free to open an issue or pull request on the [GitHub repository](https://github.com/Duerkos/steam-reviews-ai).
 If you want to make your own version, you can fork it or just grab the idea and do your own thing. If you make something public, I would love to be citated but what I really want is you to let me know about the new project!
 
+In case you want to provide links here, remember the summary can be provided directly by http://steam-review.streamlit.app/Summary?appid=<appid>.
+Please do not do scraping! the setup is on free tiers and it is easy to replicate if you already have a web app.
+
 ---
 
 ## Issues or feedback
 If you find any issues or bugs, or just want to share your thoughts, please use the [GitHub issues page](https://github.com/Duerkos/steam-reviews-ai/issues).
+
+Most of UI weirdness is due to streamlit. Currently on mobile you can't put two elements side by side. I think it is planned for the future, but it is not available yet.
 
 ---
 
