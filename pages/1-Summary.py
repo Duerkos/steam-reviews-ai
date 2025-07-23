@@ -40,7 +40,8 @@ def check_fresh_summary(result, total_reviews):
     check_reviews = total_reviews >= result.total_reviews*0.9
     return check_date & check_reviews & check_summary
 
-def manage_summary_by_appid(target_appid: str, total_reviews: int):
+def manage_summary_by_appid(target_appid: str, total_reviews: int, progress_status):
+    date_cache = None
     try:
         #st.write("Connecting to database... try 1")
         conn = st.connection("neon", type="sql")
@@ -57,8 +58,10 @@ def manage_summary_by_appid(target_appid: str, total_reviews: int):
         if check_fresh_summary(result, total_reviews) and result.bug is False:
             json_summary = result.json_object
             result.times_consulted += 1
+            date_cache = result.summary_date
             session.commit()
         else:
+            progress_status.write("### Generating summary with AI...")
             json_ai = get_summary_reviews_ai(target_appid)
             result.json_object = json_ai
             result.total_reviews = total_reviews
@@ -78,7 +81,7 @@ def manage_summary_by_appid(target_appid: str, total_reviews: int):
         #st.write("Summary retrieved or created.")
         #st.write(json_summary)
     session.close()
-    return json_summary
+    return json_summary, date_cache
 
 def write_bug(appid, content, option_bug):
     """Write a bug report to the database."""
@@ -208,11 +211,10 @@ def stack_images_vertically(img_1, img_2):
 
 @st.fragment
 def handle_bug_report():
-    option_bug = st.radio("Select an issue. Summary will regenerate.", index=None, options=options_bug, key="bug_options")
-    if option_bug:
-        if st.button("Report Bug", type="primary"):
-            write_bug(app_result, content, option_bug)
-            st.rerun()
+    option_bug = st.text_input("Can you describe the issue?",placeholder="Write a reason or leave it empty")
+    if st.button("Report Bug", type="primary"):
+        write_bug(app_result, content, option_bug)
+        st.rerun()
 
 if "app_result" in st.session_state:
     app_result = st.session_state.app_result
@@ -252,7 +254,8 @@ generated_review = False
 img = get_header_image(app_result)
 summary = get_summary(app_result)
 with col_banner.container():
-    st.write("### Steam Review Analysis in progress")
+    progress_status = st.empty()
+    progress_status.write("### Checking if summary exists in cache...")
     summary_image = add_summary_text_image(img, summary)
     im_file = BytesIO()
     summary_image.save(im_file, format="JPEG")
@@ -271,7 +274,7 @@ with col_kofi:
 if summary["total_reviews"] == 0:
     st.write("No reviews found for this game.")
     st.stop()
-content_raw = manage_summary_by_appid(str(app_result), total_reviews=int(summary['total_reviews']))
+content_raw, date_cache = manage_summary_by_appid(str(app_result), int(summary['total_reviews']), progress_status)
 content = json.loads(content_raw)
 content = trim_factors(content, summary['total_positive']/ summary['total_reviews'] * 10)
 generated_review = True
@@ -302,4 +305,8 @@ if generated_review:
         ]
         with st.popover("Is the summary wrong?", icon="❗️"):
             handle_bug_report()
+    if date_cache is not None:
+        st.write("Summary retrieved from previous date at ", date_cache.strftime("%Y-%m-%d %H:%M:%S"))
+    else:
+        st.write("Summary generated now using AI.")
     st.json(content, expanded=False)
