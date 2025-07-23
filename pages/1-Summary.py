@@ -216,9 +216,6 @@ def handle_bug_report():
         write_bug(app_result, content, option_bug)
         st.rerun()
 
-if "app_result" in st.session_state:
-    app_result = st.session_state.app_result
-    
 if "appid" in st.query_params:
     app_result = st.query_params["appid"]
 elif "app_result" in st.session_state:
