@@ -95,6 +95,12 @@ def format_string_search(df, appid):
         review_emoji = popular_game
     return review_emoji+" "+df[df["appid"] == appid]["name"].values[0]
 
+cols = st.columns(2)
+with cols[0]:
+    st.page_link("pages/2-About.py", label=":red-background[**About the app**]")
+with cols[1]:
+    st.page_link("https://ko-fi.com/duerkos", label=":red-background[**Support me**]")
+
 st.session_state.app_result = None
 # Search for a game
 search_input = st.text_input("Search Steam Game", key="search_input")
@@ -114,6 +120,7 @@ else:
         st.session_state.last_search = search_input
 
 
+
 if search_request:
     df = get_steam_df_search(search_input).copy()
     if df.empty:
@@ -124,11 +131,12 @@ if search_request:
         app_result = st.selectbox("Select game", df, disabled=not search_request, index=0, format_func = lambda appid: format_string_search(df, appid))
     with col_2:
         with st.popover("", icon="ℹ️"):
-            st.write("This app uses only English Reviews from Steam Users.")
-            st.write("❔: Game has less than 50 reviews.")
+            st.write("App uses only the top 20 English reviews from Steam.")
+            st.write("❔: Game has less than 50 reviews. Unreliable results.")
             st.write("✅: Game has more than 50 reviews.")
             st.write("🔥: Game has more than 1000 reviews.")
             st.write("Games with no reviews do not appear.")
+            st.write("The stats on the banner are also based on English reviews.")
     st.session_state.app_result = app_result
     col_image, col_stats = st.columns(2)
     img = get_header_image(app_result)
@@ -145,4 +153,4 @@ if search_request:
         st.write("No reviews found for this game.")
         st.stop()
     else:
-        st.page_link("pages/1-Summary.py", label=":red-background[**Review Analysis**]") 
+        st.page_link("pages/1-Summary.py", label=":red-background[**Review Analysis**]")

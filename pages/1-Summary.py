@@ -10,7 +10,7 @@ from mistralai import Mistral, UserMessage, SystemMessage
 from pictex import Canvas, LinearGradient
 from datetime import datetime, timedelta
 
-from sqlalchemy import Column, Integer, String, DateTime
+from sqlalchemy import Column, Integer, String, DateTime, Boolean
 from sqlalchemy.orm import declarative_base
 from utils import get_header_image, get_summary, wrap_list_of_strings, add_summary_text_image, text_to_image, get_request
 
@@ -23,6 +23,16 @@ class Summary(Base):
     total_reviews = Column(Integer)
     json_object = Column(String)
     times_consulted = Column(Integer)
+    bug = Column(Boolean)
+
+class Report(Base):
+    __tablename__ = "summary_bug"
+    appid = Column(String, primary_key=True)
+    summary_date = Column(DateTime)
+    report_date = Column(DateTime)
+    json_object_bug = Column(String)
+    times_consulted = Column(Integer)
+    reason = Column(String)
 
 def check_fresh_summary(result, total_reviews):
     check_summary = result.json_object is not None
@@ -44,7 +54,8 @@ def manage_summary_by_appid(target_appid: str, total_reviews: int):
         result = session.get(Summary, target_appid)
     json_summary = None
     if result is not None:
-        if check_fresh_summary(result, total_reviews):
+        st.write(f"The summary bug is {result.bug}. The summary date is {result.summary_date}.")
+        if check_fresh_summary(result, total_reviews) and result.bug is False:
             json_summary = result.json_object
             result.times_consulted += 1
             session.commit()
@@ -58,6 +69,7 @@ def manage_summary_by_appid(target_appid: str, total_reviews: int):
             result.total_reviews = total_reviews
             result.times_consulted += 1
             result.summary_date = datetime.now()
+            result.bug = False
             session.commit()
             json_summary = json_ai
             #st.write("Updated summary in database.")
@@ -73,10 +85,36 @@ def manage_summary_by_appid(target_appid: str, total_reviews: int):
     session.close()
     return json_summary
 
+def write_bug(appid, content, option_bug):
+    """Write a bug report to the database."""
+    try:
+        conn = st.connection("neon", type="sql")
+        session = conn.session
+        result = session.get(Summary, str(appid))
+    except Exception as e:
+        time.sleep(5)  # Wait for a while before retrying
+        conn = st.connection("neon", type="sql")
+        session = conn.session
+        result = session.get(Summary, str(appid))
+    
+    if result is not None:
+        result.bug = True
+        report = Report(appid=str(appid),
+                        summary_date=result.summary_date,
+                        report_date=datetime.now(),
+                        json_object_bug=json.dumps(content),
+                        times_consulted=result.times_consulted,
+                        reason=option_bug)
+        session.add(report)
+        session.commit()
+    else:
+        st.write("No summary found for this appid.")
+    session.close()
+
 @st.cache_data
 def parse_steamreviews_request(appid):
-    num_per_page = 50
-    max_review = 50  # max number of reviews to return
+    num_per_page = 20
+    max_review = 20  # max number of reviews to return
     review_count = 0
     good_review_list = []
     bad_review_list = []
@@ -172,6 +210,15 @@ def stack_images_vertically(img_1, img_2):
     stacked_img.paste(img_2, (0, img_1_resized.height))
 
     return stacked_img
+
+@st.fragment
+def handle_bug_report():
+    option_bug = st.radio("Select an issue. Summary will regenerate.", index=None, options=options_bug, key="bug_options")
+    if option_bug:
+        if st.button("Report Bug", type="primary"):
+            write_bug(app_result, content, option_bug)
+            st.rerun()
+
 if "app_result" in st.session_state:
     app_result = st.session_state.app_result
 else:
@@ -201,7 +248,8 @@ def check_client():
 initialize()
 
 col_banner = st.empty()
-col_back = st.container()
+col_bug = st.container()
+col_back, col_about, col_kofi = st.columns(3, vertical_alignment="center")
 generated_review = False
 img = get_header_image(app_result)
 summary = get_summary(app_result)
@@ -218,6 +266,10 @@ with col_banner.container():
     first_banner.markdown(html, unsafe_allow_html=True)
 with col_back:
     st.page_link("Search.py", label=":red-background[**Search**]")
+with col_about:
+    st.page_link("pages/2-About.py", label=":red-background[**About**]")
+with col_kofi:
+    st.page_link("https://ko-fi.com/duerkos", label=":red-background[**Support me**]")
 if summary["total_reviews"] == 0:
     st.write("No reviews found for this game.")
     st.stop()
@@ -225,15 +277,6 @@ content_raw = manage_summary_by_appid(str(app_result), total_reviews=int(summary
 content = json.loads(content_raw)
 content = trim_factors(content, summary['total_positive']/ summary['total_reviews'] * 10)
 generated_review = True
-if generated_review:
-    options_bug = [
-        "Bullet points repeat",
-        "Summary is not correct",
-        "Too long",
-        "Missing information",
-        "Wrong remarks"
-    ]
-
 if generated_review:
     with col_banner.container():
         first_banner.empty()
@@ -250,4 +293,15 @@ if generated_review:
         link = f"https://store.steampowered.com/app/{app_result}"
         html2 = f"<a href='{link}'><img src='data:image/png;base64,{image_base64}'></a>"
         st.markdown(html2, unsafe_allow_html=True)
+    with col_bug:
+        options_bug = [
+            "Description is not correct",
+            "Too long",
+            "Missing information",
+            "Wrong bullet points",
+            "Bullet points repeat",
+            "Other"
+        ]
+        with st.popover("Is the summary wrong?", icon="❗️"):
+            handle_bug_report()
     st.json(content, expanded=False)
