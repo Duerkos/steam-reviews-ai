@@ -33,10 +33,12 @@ def get_steam_df():
     """
     return pd.DataFrame(get_request("https://api.steampowered.com/ISteamApps/GetAppList/v2/?")["applist"]["apps"])
 
-def is_valid(row):
+def checks_review_availability(row):
     row["total_reviews"] = get_reviews(row["appid"])
     if row["total_reviews"] > 1000:
         row["fuzzy_score"] += 5 # Boost score for popular games
+    elif row["total_reviews"] >= 50:
+        row["fuzzy_score"] += 2 # Boost score for games with enough reviews
     return row["total_reviews"] > 0
 
 
@@ -52,7 +54,7 @@ def get_steam_df_search(search_input):
     valid_rows = []
     counter = 0
     for idx, row in df.iterrows():
-        if is_valid(row):
+        if checks_review_availability(row):
             valid_rows.append(row)
             counter += 1
         if counter == 30:
