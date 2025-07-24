@@ -33,19 +33,36 @@ def get_steam_df():
     """
     return pd.DataFrame(get_request("https://api.steampowered.com/ISteamApps/GetAppList/v2/?")["applist"]["apps"])
 
+def is_valid(row):
+    row["total_reviews"] = get_reviews(row["appid"])
+    if row["total_reviews"] > 1000:
+        row["fuzzy_score"] += 5 # Boost score for popular games
+    return row["total_reviews"] > 0
+
+
 @st.cache_data
 def get_steam_df_search(search_input):
     """Return a DataFrame of steam games matching the search input.
     """
-    df = pd.DataFrame(get_steam_df())
+    df = get_steam_df().copy()
     df["fuzzy_score"] = df["name"].apply(lambda x: fuzzy_phrase_match(x, search_input))
     df["len_name"] = df["name"].apply(lambda x: -len(x))
     df = df[df["fuzzy_score"] > 90]  # Filter out low fuzzy scores
     df = df.sort_values(by=["fuzzy_score","len_name"], ascending=False)
-    df = df.head(30)  # Limit to 30 results for performance
-    df["total_reviews"] = df["appid"].apply(lambda x: get_reviews(x))
-    df = df[df["total_reviews"] > 0]  # Ensure only games with reviews are included
-    return df
+    valid_rows = []
+    counter = 0
+    for idx, row in df.iterrows():
+        if is_valid(row):
+            valid_rows.append(row)
+            counter += 1
+        if counter == 30:
+            break
+    if counter > 0:
+        df = pd.DataFrame(valid_rows)
+        df = df.sort_values(by=["fuzzy_score","total_reviews"], ascending=False)
+        return df
+    else:
+        return None
 
 def fuzzy_phrase_match(text, target):
     def get_fuzzy_score(text_words, target_words):
@@ -122,10 +139,11 @@ else:
 
 
 if search_request:
-    df = get_steam_df_search(search_input).copy()
-    if df.empty:
+    steam_df_search = get_steam_df_search(search_input)
+    if steam_df_search is None:
         st.write("No games found for the search term.")
         st.stop()
+    df = steam_df_search.copy()
     col_1, col_2 = st.columns([0.9, 0.1], vertical_alignment="bottom")
     with col_1:
         app_result = st.selectbox("Select game", df, disabled=not search_request, index=0, format_func = lambda appid: format_string_search(df, appid))
