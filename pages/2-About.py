@@ -54,7 +54,12 @@ You may encounter rate limits due to free tiers.
 
 ## Prompt Used for Summarization
 
-> You are going to get some reviews for a specific videogame on Steam. Sometimes they contain jokes or sarcasm reviews, these should be ignored. Try to infer a description of the game based on the reviews in a short paragraph with at most 100 words, then give it a score from 0 to 10 based on the feelings. Then list positive factors, and negative factors by order of importance, at most 10 total factors, around 5 words each. If the game is more positive than negative, give more positive factors than negative. In example, if the game has a score of 8 you should list 8 positive factors and 2 negative factors. Try to always give one negative or positive factor at least. Give the output in json.
+> You are going to get some reviews for a specific videogame on Steam. Sometimes they contain jokes or sarcasm reviews, these should be ignored. Let's think step by step. Try to infer a description of the game based on the reviews in a short paragraph with at most 100 words, then give it a score from 0 to 10 based on the feelings. Then list positive factors, and negative factors by order of importance, at most 12 total factors, around 8 words each. If the game is more positive than negative, give more positive factors than negative. In example, if the game has a score of 8 you should list 9 positive factors and 3 negative factors. Try to always give one negative or positive factor at least. For each factor, you should list which reviews contained that opinion. Give the output in json.
+The input will be in this format:
+{"positive_reviews" = ["review_1_pos...", "review_2_pos...",...], "negative_reviews":  ["review_1_neg...",...]}. The output shall follow this structure in json:
+{"summary": "summary about the game",
+"score": from 0 to 10.0
+"positive_factors": [{"title": "positive_factor_1_title", "list":[list_of_reviews_with_that_factor], {"title": "positive_factor_2_title", "list": [list_of_reviews_with_that_factor]}] and the same for negative factors.
 
 **Notes:**  
 The AI often ignores the limits on factors, so the code enforces them. The prompt was refined to improve results—requesting the score before the factors works best. You can inspect the full output by clicking the three dots at the end of any summary page.
