@@ -37,7 +37,7 @@ class Report(Base):
 def check_fresh_summary(result, total_reviews):
     check_summary = result.json_object is not None
     check_date = result.summary_date >= datetime.now()-timedelta(days=30)
-    check_reviews = total_reviews >= result.total_reviews*0.9
+    check_reviews = result.total_reviews >= total_reviews*0.9
     return check_date & check_reviews & check_summary
 
 def manage_summary_by_appid(target_appid: str, total_reviews: int, progress_status):
@@ -74,7 +74,7 @@ def manage_summary_by_appid(target_appid: str, total_reviews: int, progress_stat
             #st.write(json_summary)
     else:
         json_ai = get_summary_reviews_ai(target_appid)
-        new_summary = Summary(appid=target_appid, summary_date=datetime.now(), total_reviews=total_reviews, json_object=json_ai, times_consulted=1)
+        new_summary = Summary(appid=target_appid, summary_date=datetime.now(), total_reviews=total_reviews, json_object=json_ai, times_consulted=1, bug = False)
         session.add(new_summary)
         session.commit()
         json_summary = json_ai
