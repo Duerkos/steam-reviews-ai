@@ -4,6 +4,7 @@ import json
 import time
 import textwrap
 import base64
+import bbcodepy
 from io import BytesIO
 from PIL import Image
 from mistralai import Mistral, UserMessage, SystemMessage
@@ -22,6 +23,7 @@ class Summary(Base):
     summary_date = Column(DateTime)
     total_reviews = Column(Integer)
     json_object = Column(String)
+    reviews = Column(String)
     times_consulted = Column(Integer)
     bug = Column(Boolean)
 
@@ -55,33 +57,31 @@ def manage_summary_by_appid(target_appid: str, total_reviews: int, progress_stat
         result = session.get(Summary, target_appid)
     json_summary = None
     if result is not None:
-        if check_fresh_summary(result, total_reviews) and result.bug is False:
+        if check_fresh_summary(result, total_reviews) and result.bug is False and result.reviews is not None:
             json_summary = result.json_object
+            reviews = json.loads(result.reviews)
             result.times_consulted += 1
             date_cache = result.summary_date
             session.commit()
         else:
             progress_status.write("### Generating summary with AI...")
-            json_ai = get_summary_reviews_ai(target_appid)
+            json_ai, reviews = get_summary_reviews_ai(target_appid)
             result.json_object = json_ai
             result.total_reviews = total_reviews
+            result.reviews = json.dumps(reviews)
             result.times_consulted += 1
             result.summary_date = datetime.now()
             result.bug = False
             session.commit()
             json_summary = json_ai
-            #st.write("Updated summary in database.")
-            #st.write(json_summary)
     else:
-        json_ai = get_summary_reviews_ai(target_appid)
-        new_summary = Summary(appid=target_appid, summary_date=datetime.now(), total_reviews=total_reviews, json_object=json_ai, times_consulted=1, bug = False)
+        json_ai, reviews = get_summary_reviews_ai(target_appid)
+        new_summary = Summary(appid=target_appid, summary_date=datetime.now(), total_reviews=total_reviews, json_object=json_ai, reviews=json.dumps(reviews), times_consulted=1, bug = False)
         session.add(new_summary)
         session.commit()
         json_summary = json_ai
-        #st.write("Summary retrieved or created.")
-        #st.write(json_summary)
     session.close()
-    return json_summary, date_cache
+    return json_summary, date_cache, reviews
 
 def write_bug(appid, content, option_bug):
     """Write a bug report to the database."""
@@ -114,45 +114,53 @@ def parse_steamreviews_request(appid):
     num_per_page = 20
     max_review = 20  # max number of reviews to return
     review_count = 0
-    good_review_list = []
-    bad_review_list = []
+    reviews_json = {}
     url = "https://store.steampowered.com/appreviews/" + str(appid)
     print(url)
-    parameters = {"json": 1, "cursor": "*", "num_per_page": num_per_page, "language": "english", "purchase_type": "all", "review_type": "all", "day_range": "365"}
-    #see cursor
-    #https://partner.steamgames.com/doc/store/getreviews
+    parameters = {
+        "json": 1,
+        "cursor": "*",
+        "num_per_page": num_per_page,
+        "language": "english",
+        "purchase_type": "all",
+        "review_type": "all",
+        "day_range": "365"
+    }
     json_data = get_request(url, parameters)
     summary = json_data['query_summary']
+    review_id = 1
     while review_count < max_review:
-        # if we have not reached the maximum number of good or bad reviews, and there are still reviews to fetch
         if summary["num_reviews"] == 0:
             break
         json_data = get_request(url, parameters)
         for review in json_data["reviews"]:
             review_count += 1
-            if review["voted_up"]:
-                good_review_list.append(review["review"])
-            else:
-                bad_review_list.append(review["review"])
-        # get next page of reviews
+            sentiment = "positive" if review["voted_up"] else "negative"
+            reviews_json[str(review_id)] = {
+                "review": review["review"],
+                "sentiment": sentiment
+            }
+            review_id += 1
         parameters["cursor"] = json_data["cursor"]
         summary = json_data['query_summary']
-        #st.write(json_data)
-    return good_review_list, bad_review_list, summary
-
+    return reviews_json, summary
+    
 def trim_factors(content, steam_score):
     """Trim the factors based on the steam review score, with a score of 8 two negative factors and 8 positive factors."""
     steam_score = int(steam_score)
+    content = content.copy()
     if len(content["positive_factors"]) > steam_score:
         content["positive_factors"] = content["positive_factors"][:steam_score+1]
     if len(content["negative_factors"]) > (10-steam_score):
         content["negative_factors"] = content["negative_factors"][:(10-steam_score+1)]
+    content["negative_factors"] = [item["title"] for item in content["negative_factors"]]
+    content["positive_factors"] = [item["title"] for item in content["positive_factors"]]    
     return content
 
 def get_json_response(reviews):
     try:
         response = client.agents.complete(
-            agent_id=st.secrets["review_agent"],
+            agent_id=st.secrets["review_agent_cot"],
             messages=reviews,
             stream=False,
             response_format={"type": "json_object"}
@@ -179,18 +187,11 @@ def water_mark_image(text="Steam Reviews AI", font_size=24):
     return img
 
 def get_summary_reviews_ai(appid):
-    good_review_list, bad_review_list, summary_not_needed = parse_steamreviews_request(appid)
-    
-    categorized_reviews = {
-        "positive_reviews": good_review_list,
-        "negative_reviews": bad_review_list
-    }
-    
-    raw_response = get_json_response([{"content": json.dumps(categorized_reviews), "role": "user"}])
+    json_reviews, summary = parse_steamreviews_request(appid)
+    raw_response = get_json_response([{"content": json.dumps(json_reviews), "role": "user"}])
     
     content_raw = raw_response.choices[0].message.content
-
-    return content_raw
+    return content_raw, json_reviews
 
 def stack_images_vertically(img_1, img_2):
     # Resize img_1 to match img_2 width
@@ -224,6 +225,28 @@ elif "app_result" in st.session_state:
 else:
     st.page_link("Search.py", label=":red-background[**Search a game first**]")
     st.stop()
+
+@st.fragment
+def show_related_reviews(content, reviews):
+    # Build factor options as dicts: {"title": ..., "list": [...]}
+    factor_options = [{"title": "All", "list": [str(i) for i in range(1, len(reviews)+1)]}]
+    # Add positive factors
+    for factor in content["positive_factors"]:
+        factor_options.append({"title": "✅ " + factor["title"], "list": factor["list"]})
+    # Add negative factors
+    for factor in content["negative_factors"]:
+        factor_options.append({"title": "❌ " + factor["title"], "list": factor["list"]})
+
+    factor = st.selectbox(
+        "Select a factor to read the related reviews",
+        factor_options,
+        format_func=lambda x: x["title"]
+    )
+    if not factor["list"]:
+        st.info("No reviews found for this factor.")
+    for item in factor["list"]:
+        st.write(bbcodepy.Parser().to_html(reviews[item]["review"]), unsafe_allow_html=True)
+        st.divider()
         
 # Mistral model 
 mistral_model = "mistral-small-latest"
@@ -271,9 +294,9 @@ with col_kofi:
 if summary["total_reviews"] == 0:
     st.write("No reviews found for this game.")
     st.stop()
-content_raw, date_cache = manage_summary_by_appid(str(app_result), int(summary['total_reviews']), progress_status)
-content = json.loads(content_raw)
-content = trim_factors(content, summary['total_positive']/ summary['total_reviews'] * 10)
+content_raw, date_cache, reviews = manage_summary_by_appid(str(app_result), int(summary['total_reviews']), progress_status)
+content_original = json.loads(content_raw)
+content = trim_factors(content_original, summary['total_positive']/ summary['total_reviews'] * 10)
 generated_review = True
 if generated_review:
     with col_banner.container():
@@ -306,4 +329,5 @@ if generated_review:
         st.write("Summary retrieved from previous date at ", date_cache.strftime("%Y-%m-%d %H:%M:%S"))
     else:
         st.write("Summary generated now using AI.")
-    st.json(content, expanded=False)
+    show_related_reviews(content_original, reviews)
+    st.json(content_original, expanded=False)
