@@ -47,24 +47,41 @@ def get_steam_df_search(search_input):
     """Return a DataFrame of steam games matching the search input.
     """
     df = get_steam_df().copy()
+    df = add_fuzzy_scores(df, search_input)
+    df = filter_and_sort_df(df)
+    valid_rows = get_valid_rows(df)
+    if valid_rows:
+        return pd.DataFrame(valid_rows).sort_values(
+            by=["fuzzy_score", "total_reviews"], ascending=False
+        )
+    return None
+
+
+def add_fuzzy_scores(df, search_input):
+    """Add fuzzy scores to the DataFrame."""
     df["fuzzy_score"] = df["name"].apply(lambda x: fuzzy_phrase_match(x, search_input))
     df["len_name"] = df["name"].apply(lambda x: -len(x))
+    return df
+
+
+def filter_and_sort_df(df):
+    """Filter and sort the DataFrame based on fuzzy scores."""
     df = df[df["fuzzy_score"] > 90]  # Filter out low fuzzy scores
-    df = df.sort_values(by=["fuzzy_score","len_name"], ascending=False)
+    return df.sort_values(by=["fuzzy_score", "len_name"], ascending=False)
+
+
+def get_valid_rows(df):
+    """Get valid rows from the DataFrame."""
     valid_rows = []
     counter = 0
-    for idx, row in df.iterrows():
+    for _idx, row in df.iterrows():
         if checks_review_availability(row):
             valid_rows.append(row)
             counter += 1
         if counter == 30:
             break
-    if counter > 0:
-        df = pd.DataFrame(valid_rows)
-        df = df.sort_values(by=["fuzzy_score","total_reviews"], ascending=False)
-        return df
-    else:
-        return None
+    return valid_rows
+
 
 def fuzzy_phrase_match(text, target):
     def get_fuzzy_score(text_words, target_words):
