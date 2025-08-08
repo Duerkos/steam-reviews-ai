@@ -2,7 +2,7 @@ streamlit
 pandas
 pillow
 mistralai
-pictex
+pictex == 0.2.1
 sqlalchemy
 psycopg2-binary
 thefuzz
