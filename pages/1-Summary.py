@@ -274,8 +274,6 @@ generated_review = False
 img = get_header_image(app_result)
 summary = get_summary(app_result)
 with col_banner.container():
-    progress_status = st.empty()
-    progress_status.write("### Checking if summary exists in cache...")
     summary_image = add_summary_text_image(img, summary)
     im_file = BytesIO()
     summary_image.save(im_file, format="JPEG")
@@ -294,40 +292,6 @@ with col_kofi:
 if summary["total_reviews"] == 0:
     st.write("No reviews found for this game.")
     st.stop()
-content_raw, date_cache, reviews = manage_summary_by_appid(str(app_result), int(summary['total_reviews']), progress_status)
-content_original = json.loads(content_raw)
-content = trim_factors(content_original, summary['total_positive']/ summary['total_reviews'] * 10)
-generated_review = True
-if generated_review:
-    with col_banner.container():
-        first_banner.empty()
-        review_img = stack_images_vertically(stack_images_vertically(add_summary_text_image(img, summary, content["score"]),
-                    water_mark_image(text="www.steam-review.streamlit.app                                                                    by github.com/duerkos")),
-                    text_to_image(textwrap.fill(content["summary"], width=80) + "\n\n" +
-                    wrap_list_of_strings(content["positive_factors"], emoji="✅", width=80) +"\n" +
-                    wrap_list_of_strings(content["negative_factors"], emoji="❌", width=80),
-                    alignment="left", line_height=1.5))
-        summary_file = BytesIO()
-        review_img.save(summary_file, format="JPEG")
-        im_bytes = summary_file.getvalue()
-        image_base64 = base64.b64encode(im_bytes).decode()
-        link = f"https://store.steampowered.com/app/{app_result}"
-        html2 = f"<a href='{link}'><img src='data:image/png;base64,{image_base64}'></a>"
-        st.markdown(html2, unsafe_allow_html=True)
-    with col_bug:
-        options_bug = [
-            "Description is not correct",
-            "Too long",
-            "Missing information",
-            "Wrong bullet points",
-            "Bullet points repeat",
-            "Other"
-        ]
-        with st.popover("Is the summary wrong?", icon="❗️"):
-            handle_bug_report()
-    if date_cache is not None:
-        st.write("Summary retrieved from previous date at ", date_cache.strftime("%Y-%m-%d %H:%M:%S"))
-    else:
-        st.write("Summary generated now using AI.")
-    show_related_reviews(content_original, reviews)
-    st.json(content_original, expanded=False)
+st.markdown('''
+            ##Project Launched elsewhere!
+            #Please check https://steambuzz.vercel.app/ or https://duerkos.github.io/landing-page/ to check where the project lives on''')

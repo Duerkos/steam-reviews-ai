@@ -120,57 +120,6 @@ with cols[0]:
 with cols[1]:
     st.page_link("https://ko-fi.com/duerkos", label=":red-background[**Support me**]")
 
-st.session_state.app_result = None
-# Search for a game
-search_input = st.text_input("Search Steam Game", key="search_input")
-if search_input == "":
-    search_request = False
-    st.stop()
-else:
-    search_request = True
-    if "generated_review" not in st.session_state:
-        st.session_state.generated_review = False
-    if "last_search" not in st.session_state:
-        st.session_state.last_search = ""
-        
-    # Reset only if search input changed
-    if search_input != st.session_state.last_search:
-        st.session_state.generated_review = False
-        st.session_state.last_search = search_input
-
-
-
-if search_request:
-    steam_df_search = get_steam_df_search(search_input)
-    if steam_df_search is None:
-        st.write("No games found for the search term.")
-        st.stop()
-    df = steam_df_search.copy()
-    col_1, col_2 = st.columns([0.9, 0.1], vertical_alignment="bottom")
-    with col_1:
-        app_result = st.selectbox("Select game", df, disabled=not search_request, index=0, format_func = lambda appid: format_string_search(df, appid))
-    with col_2:
-        with st.popover("", icon="ℹ️"):
-            st.write("App uses only the top 20 English reviews from Steam.")
-            st.write("❔: Game has less than 50 reviews. Unreliable results.")
-            st.write("✅: Game has more than 50 reviews.")
-            st.write("🔥: Game has more than 1000 reviews.")
-            st.write("Games with no reviews do not appear.")
-            st.write("The stats on the banner are also based on English reviews.")
-    st.session_state.app_result = app_result
-    col_image, col_stats = st.columns(2)
-    img = get_header_image(app_result)
-    summary = get_summary(app_result)
-    summary_image = add_summary_text_image(img, summary)
-    im_file = BytesIO()
-    summary_image.save(im_file, format="JPEG")
-    im_bytes = im_file.getvalue()
-    image_base64 = base64.b64encode(im_bytes).decode()
-    link = f"https://store.steampowered.com/app/{app_result}"
-    html = f"<a href='{link}'><img src='data:image/png;base64,{image_base64}'></a>"
-    st.markdown(html, unsafe_allow_html=True)
-    if summary["total_reviews"] == 0:
-        st.write("No reviews found for this game.")
-        st.stop()
-    else:
-        st.page_link("pages/1-Summary.py", label=":red-background[**Review Analysis**]")
+st.markdown('''
+            ##Project Launched elsewhere!
+            #Please check https://steambuzz.vercel.app/ or https://duerkos.github.io/landing-page/ to check where the project lives on''')
